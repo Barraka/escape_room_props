@@ -24,3 +24,7 @@ const SensorState* EY_Sensors_GetState(uint8_t index);
 
 // Get sensor count
 uint8_t EY_Sensors_GetCount();
+
+// Force-trigger a sensor remotely (for GM override)
+// Returns true if sensor found and triggered
+bool EY_Sensors_ForceTrigger(const char* sensorId);

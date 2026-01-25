@@ -133,16 +133,29 @@ sudo systemctl status mosquitto
 - **MQTT blocking**: If the MQTT broker is unreachable, `s_mqtt.connect()` can block for 1-2 seconds. The LED reading was moved to the top of `loop()` to ensure instant sensor response regardless of network state.
 - **Error code -2**: Means MQTT broker is unreachable (check Pi is on, Mosquitto running)
 
+## Recent Changes
+
+- **Remote sensor triggering** (added): ESP32 now handles `set_output` command from GM Dashboard
+  - MQTT command format: `{"type":"cmd","command":"set_output","sensorId":"rfid1"}`
+  - Forces sensor to triggered state regardless of physical input
+  - Publishes event with source "gm" and updates status
+
+- **Sensor-level reporting** (added): MQTT status messages now include `details.sensors` array
+  - Format: `"details": { "sensors": [{ "sensorId": "rfid1", "triggered": true }, ...] }`
+  - Enables GM Dashboard to show individual sensor states
+  - Enables GM to trigger individual sensors remotely
+
 ## Future Development
 
-- **Room Controller (MiniPC/Pi)**: Needs to be built
-  - Subscribe to all prop MQTT messages
-  - Manage game state and puzzle flow
-  - WebSocket server for GM Dashboard
-  - Cross-prop coordination
-  - Persistence and analytics
+- **NTP time sync**: Replace `millis()` with real timestamps
+
+## Related Projects
+
+- **Room Controller**: `c:\02 - GM Manager\room-controller\` (Node.js, MQTT + WebSocket)
+- **GM Dashboard**: `c:\02 - GM Manager\escapeRoomManager\` (React)
 
 ## Related Documentation
 
 - `MQTT_CONTRACT_v1.md` - Full MQTT message specification (frozen v1.0)
+- `c:\02 - GM Manager\WEBSOCKET_CONTRACT_v1.md` - Room Controller ↔ Dashboard protocol
 - Architecture PDF on Desktop: `c:\Users\Manu\Desktop\EY Prop Architecture V2.pdf`

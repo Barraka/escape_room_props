@@ -1,5 +1,6 @@
 #include "EY_Mqtt.h"
 #include "EY_Config.h"
+#include "EY_Sensors.h"
 
 #include <WiFi.h>
 #include <PubSubClient.h>
@@ -56,6 +57,7 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   bool isReset = false;
   bool isForceSolved = false;
+  const char* triggerSensorId = nullptr;
   const char* cmdSource = EY_MQTT::SRC_GM;
 
   // Legacy shortcut: plain text "reset"
@@ -79,6 +81,8 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
           isReset = true;
         } else if (strcmp(command, "force_solved") == 0) {
           isForceSolved = true;
+        } else if (strcmp(command, "set_output") == 0) {
+          triggerSensorId = doc["sensorId"];
         }
       }
     }
@@ -103,6 +107,14 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
     Serial.print("CMD: force_solved from ");
     Serial.println(cmdSource);
     s_onSetSolved(true, cmdSource);
+  }
+
+  if (triggerSensorId) {
+    Serial.print("CMD: set_output sensorId=");
+    Serial.print(triggerSensorId);
+    Serial.print(" from ");
+    Serial.println(cmdSource);
+    EY_Sensors_ForceTrigger(triggerSensorId);
   }
 }
 
@@ -256,7 +268,8 @@ void EY_PublishEvent(const char* action, const char* source) {
 void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideActive) {
   if (!s_mqtt.connected()) return;
 
-  StaticJsonDocument<256> doc;
+  // Larger buffer to accommodate sensor details
+  StaticJsonDocument<512> doc;
   doc[EY_MQTT::F_TYPE] = EY_MQTT::TYPE_STATUS;
   doc[EY_MQTT::F_DEVICE_ID] = DEVICE_ID;
   doc[EY_MQTT::F_ONLINE] = true;
@@ -265,10 +278,22 @@ void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideAc
   doc[EY_MQTT::F_OVERRIDE] = overrideActive;
   doc[EY_MQTT::F_TS] = millis();  // Note: real timestamp requires NTP
 
+  // Add sensor-level details for GM Dashboard
+  JsonObject details = doc.createNestedObject("details");
+  JsonArray sensors = details.createNestedArray("sensors");
+
+  uint8_t sensorCount = EY_Sensors_GetCount();
+  for (uint8_t i = 0; i < sensorCount; i++) {
+    const SensorState* state = EY_Sensors_GetState(i);
+    JsonObject sensor = sensors.createNestedObject();
+    sensor["sensorId"] = SENSORS[i].id;
+    sensor["triggered"] = state ? state->present : false;
+  }
+
   String topic = buildStatusTopic();
 
   // Status messages are RETAINED per contract
-  char out[256];
+  char out[512];
   unsigned int len = serializeJson(doc, out, sizeof(out));
   bool ok = s_mqtt.publish(topic.c_str(), (const uint8_t*)out, len, true);  // retained = true
 
@@ -281,6 +306,8 @@ void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideAc
     Serial.print(", source=");
     Serial.print(lastChangeSource ? lastChangeSource : "device");
     Serial.print(", override=");
-    Serial.println(overrideActive ? "true" : "false");
+    Serial.print(overrideActive ? "true" : "false");
+    Serial.print(", sensors=");
+    Serial.println(sensorCount);
   }
 }

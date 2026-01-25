@@ -120,3 +120,33 @@ const SensorState* EY_Sensors_GetState(uint8_t index) {
 uint8_t EY_Sensors_GetCount() {
   return SENSOR_COUNT;
 }
+
+bool EY_Sensors_ForceTrigger(const char* sensorId) {
+  if (!sensorId) return false;
+
+  for (uint8_t i = 0; i < SENSOR_COUNT; i++) {
+    if (strcmp(SENSORS[i].id, sensorId) == 0) {
+      SensorState& state = s_states[i];
+
+      // Force the sensor to triggered state
+      state.armed = true;
+      state.present = true;
+
+      Serial.print("[Sensor] ");
+      Serial.print(sensorId);
+      Serial.println(" -> FORCE TRIGGERED (GM)");
+
+      // Publish event if not already sent
+      if (!state.eventSent) {
+        EY_PublishEvent(SENSORS[i].actionEvent, EY_MQTT::SRC_GM);
+        state.eventSent = true;
+      }
+
+      return true;
+    }
+  }
+
+  Serial.print("[Sensor] Unknown sensorId: ");
+  Serial.println(sensorId);
+  return false;
+}
