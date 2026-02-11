@@ -13,14 +13,16 @@ static const char* lastChangeSource = EY_MQTT::SRC_DEVICE;
 static bool overrideActive = false;
 
 // Ignore sensors briefly after reset (to avoid instant re-solve)
-static unsigned long ignoreSensorsUntil = 0;
+static unsigned long ignoreSensorsStart = 0;
+static bool ignoringSensors = false;
 
 // LED patterns
 static unsigned long lastBlink = 0;
 static bool ledState = false;
 
 // Reset feedback
-static unsigned long resetFeedbackUntil = 0;
+static unsigned long resetFeedbackStart = 0;
+static bool resetFeedbackActive = false;
 static unsigned long lastResetBlink = 0;
 
 // MQTT status announcement tracking
@@ -67,10 +69,12 @@ static void handleReset() {
   // Reset sensor states
   EY_Sensors_Reset();
 
-  ignoreSensorsUntil = millis() + IGNORE_SENSORS_MS;
+  ignoringSensors = true;
+  ignoreSensorsStart = millis();
 
   // Visual feedback
-  resetFeedbackUntil = millis() + RESET_FEEDBACK_MS;
+  resetFeedbackActive = true;
+  resetFeedbackStart = millis();
   lastResetBlink = millis();
   ledState = false;
   setLed(false);
@@ -118,11 +122,15 @@ void setup() {
 // =====================
 
 void loop() {
-  // ---- LED mirrors magnet sensor state (direct feedback - first priority) ----
-  // Read magnet sensor directly: LOW = magnet present
+  // ---- LED mirrors sensor state (direct feedback - first priority) ----
   // This must be first to ensure instant response without network delays
-  bool magnetPresent = (digitalRead(27) == LOW);
-  setLed(magnetPresent);
+  if (LED_MIRROR_SENSOR >= 0 && LED_MIRROR_SENSOR < SENSOR_COUNT) {
+    const SensorDef& mirrorDef = SENSORS[LED_MIRROR_SENSOR];
+    bool present = (mirrorDef.presentWhen == PresentWhen::LOW_LEVEL)
+      ? (digitalRead(mirrorDef.pin) == LOW)
+      : (digitalRead(mirrorDef.pin) == HIGH);
+    setLed(present);
+  }
 
   // Networking always ticks, but never blocks prop logic
   EY_Net_Tick();
@@ -149,17 +157,22 @@ void loop() {
   }
 
   // ---- Reset feedback (fast blink) has priority ----
-  if (millis() < resetFeedbackUntil) {
-    if (millis() - lastResetBlink >= RESET_FEEDBACK_BLINK_MS) {
-      ledState = !ledState;
-      setLed(ledState);
-      lastResetBlink = millis();
+  if (resetFeedbackActive) {
+    if (millis() - resetFeedbackStart >= RESET_FEEDBACK_MS) {
+      resetFeedbackActive = false;
+    } else {
+      if (millis() - lastResetBlink >= RESET_FEEDBACK_BLINK_MS) {
+        ledState = !ledState;
+        setLed(ledState);
+        lastResetBlink = millis();
+      }
+      return;  // Skip sensor processing during reset feedback
     }
-    return;  // Skip sensor processing during reset feedback
   }
 
   // ---- Sensor processing ----
-  if (millis() >= ignoreSensorsUntil) {
+  if (!ignoringSensors || millis() - ignoreSensorsStart >= IGNORE_SENSORS_MS) {
+    ignoringSensors = false;
     bool sensorsSolved = EY_Sensors_Tick();
 
     // Latch solved state

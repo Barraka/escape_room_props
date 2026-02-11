@@ -32,6 +32,10 @@ static String buildCmdTopic() {
   return buildTopicBase() + "/cmd";
 }
 
+static String buildLwtTopic() {
+  return buildTopicBase() + "/lwt";
+}
+
 static String buildBroadcastCmdTopic() {
   return String("ey/") + SITE_ID + "/" + ROOM_ID + "/all/cmd";
 }
@@ -149,15 +153,13 @@ static void mqttTick() {
 
   String clientId = String("esp32_") + SITE_ID + "_" + ROOM_ID + "_" + DEVICE_ID;
 
-  // Build LWT payload (published automatically by broker on unexpected disconnect)
-  String lwtTopic = buildStatusTopic();
-  StaticJsonDocument<256> lwtDoc;
-  lwtDoc[EY_MQTT::F_TYPE] = EY_MQTT::TYPE_STATUS;
-  lwtDoc[EY_MQTT::F_DEVICE_ID] = DEVICE_ID;
+  // Build LWT payload on /lwt topic (broker publishes on unexpected disconnect)
+  String lwtTopic = buildLwtTopic();
+  StaticJsonDocument<128> lwtDoc;
+  lwtDoc[EY_MQTT::F_PROP_ID] = DEVICE_ID;
   lwtDoc[EY_MQTT::F_ONLINE] = false;
-  lwtDoc[EY_MQTT::F_TS] = millis();  // Note: real timestamp requires NTP; millis() is a fallback
 
-  char lwtPayload[256];
+  char lwtPayload[128];
   serializeJson(lwtDoc, lwtPayload, sizeof(lwtPayload));
 
   // Connect with LWT (QoS 1, retained)
@@ -171,14 +173,12 @@ static void mqttTick() {
     s_mqtt.subscribe(tDev.c_str());
     s_mqtt.subscribe(tAll.c_str());
 
-    // Publish online status immediately after connect (retained)
-    StaticJsonDocument<256> onlineDoc;
-    onlineDoc[EY_MQTT::F_TYPE] = EY_MQTT::TYPE_STATUS;
-    onlineDoc[EY_MQTT::F_DEVICE_ID] = DEVICE_ID;
+    // Publish online=true on /lwt topic (retained)
+    StaticJsonDocument<128> onlineDoc;
+    onlineDoc[EY_MQTT::F_PROP_ID] = DEVICE_ID;
     onlineDoc[EY_MQTT::F_ONLINE] = true;
-    onlineDoc[EY_MQTT::F_TS] = millis();
 
-    char onlinePayload[256];
+    char onlinePayload[128];
     unsigned int len = serializeJson(onlineDoc, onlinePayload, sizeof(onlinePayload));
     s_mqtt.publish(lwtTopic.c_str(), (const uint8_t*)onlinePayload, len, true);  // retained
 
@@ -186,7 +186,6 @@ static void mqttTick() {
     Serial.print("MQTT FAIL rc=");
     Serial.println(s_mqtt.state());
   }
-
 }
 
 void EY_Net_Begin(ResetCallback onReset, SetSolvedCallback onSetSolved) {
@@ -194,6 +193,7 @@ void EY_Net_Begin(ResetCallback onReset, SetSolvedCallback onSetSolved) {
   s_onSetSolved = onSetSolved;
 
   s_mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  s_mqtt.setBufferSize(512);  // Default 256 is too small for status messages with sensor details
   s_mqtt.setCallback(mqttCallback);
 
   wifiTick();
@@ -250,10 +250,10 @@ void EY_PublishEvent(const char* action, const char* source) {
 
   StaticJsonDocument<256> doc;
   doc[EY_MQTT::F_TYPE] = EY_MQTT::TYPE_EVENT;
-  doc[EY_MQTT::F_DEVICE_ID] = DEVICE_ID;
+  doc[EY_MQTT::F_PROP_ID] = DEVICE_ID;
   doc[EY_MQTT::F_ACTION] = action;
   doc[EY_MQTT::F_SOURCE] = source ? source : EY_MQTT::SRC_DEVICE;
-  doc[EY_MQTT::F_TS] = millis();  // Note: real timestamp requires NTP
+  doc[EY_MQTT::F_TIMESTAMP] = millis();  // Note: real timestamp requires NTP
 
   String topic = buildEventTopic();
   publishJson(topic, doc);
@@ -271,12 +271,13 @@ void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideAc
   // Larger buffer to accommodate sensor details
   StaticJsonDocument<512> doc;
   doc[EY_MQTT::F_TYPE] = EY_MQTT::TYPE_STATUS;
-  doc[EY_MQTT::F_DEVICE_ID] = DEVICE_ID;
+  doc[EY_MQTT::F_PROP_ID] = DEVICE_ID;
+  doc["name"] = DEVICE_NAME;
   doc[EY_MQTT::F_ONLINE] = true;
   doc[EY_MQTT::F_SOLVED] = solved;
   doc[EY_MQTT::F_LAST_CHANGE_SOURCE] = lastChangeSource ? lastChangeSource : EY_MQTT::SRC_DEVICE;
   doc[EY_MQTT::F_OVERRIDE] = overrideActive;
-  doc[EY_MQTT::F_TS] = millis();  // Note: real timestamp requires NTP
+  doc[EY_MQTT::F_TIMESTAMP] = millis();  // Note: real timestamp requires NTP
 
   // Add sensor-level details for GM Dashboard
   JsonObject details = doc.createNestedObject("details");

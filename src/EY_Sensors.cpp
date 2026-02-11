@@ -47,6 +47,9 @@ void EY_Sensors_Begin() {
     s_states[i].armed = !SENSORS[i].needsArming;  // Pre-armed if arming not required
     s_states[i].present = false;
     s_states[i].eventSent = false;
+    s_states[i].forceLocked = false;
+    s_states[i].lastRaw = readPresent(SENSORS[i]);
+    s_states[i].lastChangeMs = millis();
   }
 }
 
@@ -57,7 +60,17 @@ bool EY_Sensors_Tick() {
     const SensorDef& def = SENSORS[i];
     SensorState& state = s_states[i];
 
+    // Skip sensors that were force-triggered by GM (preserved until reset)
+    if (state.present && state.forceLocked) continue;
+
     bool raw = readPresent(def);
+
+    // Debounce: track raw GPIO changes, only accept after stable for DEBOUNCE_MS
+    if (raw != state.lastRaw) {
+      state.lastRaw = raw;
+      state.lastChangeMs = millis();
+    }
+    if (millis() - state.lastChangeMs < DEBOUNCE_MS) continue;
 
     // Arming logic: must see "not present" before "present" counts
     if (def.needsArming && !state.armed) {
@@ -104,6 +117,9 @@ void EY_Sensors_Reset() {
     s_states[i].armed = !SENSORS[i].needsArming;
     s_states[i].present = false;
     s_states[i].eventSent = false;
+    s_states[i].forceLocked = false;
+    s_states[i].lastRaw = readPresent(SENSORS[i]);
+    s_states[i].lastChangeMs = millis();
   }
   Serial.println("[Sensor] All sensors reset");
 }
@@ -128,9 +144,10 @@ bool EY_Sensors_ForceTrigger(const char* sensorId) {
     if (strcmp(SENSORS[i].id, sensorId) == 0) {
       SensorState& state = s_states[i];
 
-      // Force the sensor to triggered state
+      // Force the sensor to triggered state (locked until reset)
       state.armed = true;
       state.present = true;
+      state.forceLocked = true;
 
       Serial.print("[Sensor] ");
       Serial.print(sensorId);

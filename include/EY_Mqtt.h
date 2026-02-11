@@ -4,28 +4,27 @@
 #include <Arduino.h>
 
 // ---- MQTT JSON contract constants (avoid typos across the project) ----
+// Must match MQTT_CONTRACT_v1.md field names exactly.
 namespace EY_MQTT {
-  // Field names
-  static constexpr const char* F_DEVICE_ID          = "deviceId";
+  // Field names (contract v1)
+  static constexpr const char* F_PROP_ID            = "propId";
   static constexpr const char* F_TYPE               = "type";               // "event" | "status"
   static constexpr const char* F_ACTION             = "action";
   static constexpr const char* F_SOURCE             = "source";             // "player" | "gm" | "device"
-  static constexpr const char* F_TS                 = "ts";
+  static constexpr const char* F_TIMESTAMP          = "timestamp";
 
   static constexpr const char* F_SOLVED             = "solved";
   static constexpr const char* F_LAST_CHANGE_SOURCE = "lastChangeSource";
   static constexpr const char* F_OVERRIDE           = "override";
+  static constexpr const char* F_ONLINE             = "online";
 
   // Values
   static constexpr const char* TYPE_EVENT  = "event";
   static constexpr const char* TYPE_STATUS = "status";
-
-    static constexpr const char* TYPE_CMD    = "cmd";
-static constexpr const char* SRC_PLAYER  = "player";
+  static constexpr const char* TYPE_CMD    = "cmd";
+  static constexpr const char* SRC_PLAYER  = "player";
   static constexpr const char* SRC_GM      = "gm";
   static constexpr const char* SRC_DEVICE  = "device";
-  static constexpr const char* F_ONLINE = "online";
-
 }
 
 // Callbacks

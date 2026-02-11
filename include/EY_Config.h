@@ -2,6 +2,9 @@
 
 #include "EY_Types.h"  // For SensorDef, PresentWhen, SolveMode
 
+// Firmware Version (increment when making changes)
+static constexpr const char* FIRMWARE_VERSION = "1.1.0";
+
 // MQTT Contract: MQTT_CONTRACT_v1.md (v1.0 FROZEN)
 static constexpr const char* MQTT_CONTRACT_VERSION = "1.0";
 
@@ -12,6 +15,7 @@ static constexpr const char* MQTT_CONTRACT_VERSION = "1.0";
 static const char* SITE_ID   = "default";           // Site identifier for multi-location support
 static const char* ROOM_ID   = "magie";
 static const char* DEVICE_ID = "magie_roueFortune";
+static const char* DEVICE_NAME = "Roue de la Fortune";
 
 // =====================
 // Wi-Fi (same per room)
@@ -50,6 +54,8 @@ static const int RESET_BTN_PIN = 0;    // BOOT button (active LOW)
 //
 static const SensorDef SENSORS[] = {
   //  id         pin  presentWhen              actionEvent       needsArming
+  // WARNING: GPIO 12 is an ESP32 strapping pin. If pulled HIGH at boot, the chip
+  // may fail to start (wrong flash voltage). Prefer GPIO 13, 14, 25, 26, 32, 33.
   { "rfid1",     12,  PresentWhen::HIGH_LEVEL, "rfid_present",   true  },
   { "magnet1",   27,  PresentWhen::LOW_LEVEL,  "magnet_present", false },
 };
@@ -64,6 +70,10 @@ static const unsigned long RESET_HOLD_MS           = 1000;  // Button hold time 
 static const unsigned long RESET_FEEDBACK_MS       = 1500;  // Fast blink duration after reset
 static const unsigned long RESET_FEEDBACK_BLINK_MS = 100;   // Fast blink rate
 static const unsigned long IGNORE_SENSORS_MS       = 2000;  // Ignore sensors briefly after reset
+static const unsigned long DEBOUNCE_MS             = 20;    // Debounce window for mechanical sensors (ms)
 
 // LED polarity (set true if LED is wired active-low)
 static const bool LED_ACTIVE_LOW = false;
+
+// LED mirror: index into SENSORS[] whose state is mirrored on LED_PIN (-1 to disable)
+static const int LED_MIRROR_SENSOR = 1;  // magnet1

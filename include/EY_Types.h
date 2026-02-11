@@ -35,6 +35,9 @@ struct SensorDef {
 // Sensor runtime state
 struct SensorState {
   bool armed;      // Only relevant if needsArming == true
-  bool present;    // Current computed presence
+  bool present;    // Current computed presence (after debounce)
   bool eventSent;  // One-shot event sent this session (reset clears this)
+  bool forceLocked;        // Set by GM force-trigger, preserved until reset
+  bool lastRaw;            // Last raw GPIO reading (for debounce)
+  unsigned long lastChangeMs;  // millis() when lastRaw changed (for debounce)
 };

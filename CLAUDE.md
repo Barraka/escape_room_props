@@ -135,6 +135,17 @@ sudo systemctl status mosquitto
 
 ## Recent Changes
 
+### v1.1.0 — Audit Bug Fix Pass
+- **MQTT field names**: Aligned with Contract v1.0 — `deviceId` → `propId`, `ts` → `timestamp`
+- **LWT topic**: Moved from `/status` to dedicated `/lwt` topic for clean separation
+- **DEVICE_NAME**: Added to config and included in status messages for auto-discovery
+- **MQTT buffer size**: Increased to 512 bytes (default 256 was too small for status with sensor details)
+- **Sensor debouncing**: Added configurable `DEBOUNCE_MS` (20ms default) to prevent false triggers from mechanical noise
+- **Force-trigger locking**: GM-triggered sensors now stay locked (`forceLocked`) until reset, preventing physical state from overriding GM actions
+- **LED mirror configurable**: LED mirror sensor is now configurable via `LED_MIRROR_SENSOR` index instead of hardcoded GPIO 27
+- **Millis overflow safety**: Replaced `millis() < deadline` patterns with `millis() - start >= duration` for correct 49-day rollover handling
+- **GPIO 12 strapping pin warning**: Added comment warning about ESP32 GPIO 12 boot behavior
+
 - **Remote sensor triggering** (added): ESP32 now handles `set_output` command from GM Dashboard
   - MQTT command format: `{"type":"cmd","command":"set_output","sensorId":"rfid1"}`
   - Forces sensor to triggered state regardless of physical input
