@@ -30,9 +30,10 @@ namespace EY_MQTT {
 // Callbacks
 typedef void (*ResetCallback)();
 typedef void (*SetSolvedCallback)(bool solved, const char* source);
+typedef void (*ArmCallback)();
 
 // Network lifecycle
-void EY_Net_Begin(ResetCallback onReset, SetSolvedCallback onSetSolved = nullptr);
+void EY_Net_Begin(ResetCallback onReset, SetSolvedCallback onSetSolved = nullptr, ArmCallback onArm = nullptr);
 void EY_Net_Tick();                 // call every loop
 bool EY_Mqtt_Connected();
 

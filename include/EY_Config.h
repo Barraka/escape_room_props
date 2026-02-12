@@ -3,7 +3,7 @@
 #include "EY_Types.h"  // For SensorDef, PresentWhen, SolveMode
 
 // Firmware Version (increment when making changes)
-static constexpr const char* FIRMWARE_VERSION = "1.1.0";
+static constexpr const char* FIRMWARE_VERSION = "1.2.0";
 
 // MQTT Contract: MQTT_CONTRACT_v1.md (v1.0 FROZEN)
 static constexpr const char* MQTT_CONTRACT_VERSION = "1.0";
@@ -61,6 +61,19 @@ static const SensorDef SENSORS[] = {
 };
 static constexpr uint8_t SENSOR_COUNT = sizeof(SENSORS) / sizeof(SENSORS[0]);
 static constexpr SolveMode SOLVE_MODE = SolveMode::ANY;
+
+// =====================
+// Output Definitions (edit per prop)
+// =====================
+// Each prop defines its outputs here (maglocks, relays, etc.).
+// Lifecycle: INACTIVE (boot) → ARMED (GM arms) → RELEASED (solve/force_solve)
+// Fail-safe: outputs start INACTIVE (e.g., maglock unlocked) on boot/power loss.
+//
+static const OutputDef OUTPUTS[] = {
+  //  id           pin  activeLow
+  { "maglock1",    25,  true },
+};
+static constexpr uint8_t OUTPUT_COUNT = sizeof(OUTPUTS) / sizeof(OUTPUTS[0]);
 
 // =====================
 // Behavior Tuning

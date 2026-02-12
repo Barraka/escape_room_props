@@ -41,3 +41,17 @@ struct SensorState {
   bool lastRaw;            // Last raw GPIO reading (for debounce)
   unsigned long lastChangeMs;  // millis() when lastRaw changed (for debounce)
 };
+
+// Output definition (compile-time configuration)
+struct OutputDef {
+  const char* id;    // Stable identifier, e.g., "maglock1", "relay_door"
+  uint8_t pin;       // GPIO pin number
+  bool activeLow;    // true = LOW activates the relay/maglock (common for relay modules)
+};
+
+// Output runtime state
+enum class OutputPinState : uint8_t {
+  INACTIVE,   // Pin at rest — fail-safe: maglock unlocked (boot default)
+  ARMED,      // Pin activated — maglock locked
+  RELEASED,   // Pin deactivated after solve — maglock unlocked
+};

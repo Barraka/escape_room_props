@@ -1,6 +1,7 @@
 #include "EY_Mqtt.h"
 #include "EY_Config.h"
 #include "EY_Sensors.h"
+#include "EY_Outputs.h"
 
 #include <WiFi.h>
 #include <PubSubClient.h>
@@ -10,6 +11,7 @@ static WiFiClient    s_wifi;
 static PubSubClient  s_mqtt(s_wifi);
 static ResetCallback s_onReset = nullptr;
 static SetSolvedCallback s_onSetSolved = nullptr;
+static ArmCallback s_onArm = nullptr;
 
 // retry timers (non-blocking)
 static unsigned long s_lastWifiAttempt = 0;
@@ -61,6 +63,7 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   bool isReset = false;
   bool isForceSolved = false;
+  bool isArm = false;
   const char* triggerSensorId = nullptr;
   const char* cmdSource = EY_MQTT::SRC_GM;
 
@@ -85,6 +88,8 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
           isReset = true;
         } else if (strcmp(command, "force_solved") == 0) {
           isForceSolved = true;
+        } else if (strcmp(command, "arm") == 0) {
+          isArm = true;
         } else if (strcmp(command, "set_output") == 0) {
           triggerSensorId = doc["sensorId"];
         }
@@ -111,6 +116,11 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
     Serial.print("CMD: force_solved from ");
     Serial.println(cmdSource);
     s_onSetSolved(true, cmdSource);
+  }
+
+  if (isArm && s_onArm) {
+    Serial.println("CMD: arm");
+    s_onArm();
   }
 
   if (triggerSensorId) {
@@ -188,12 +198,13 @@ static void mqttTick() {
   }
 }
 
-void EY_Net_Begin(ResetCallback onReset, SetSolvedCallback onSetSolved) {
+void EY_Net_Begin(ResetCallback onReset, SetSolvedCallback onSetSolved, ArmCallback onArm) {
   s_onReset = onReset;
   s_onSetSolved = onSetSolved;
+  s_onArm = onArm;
 
   s_mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  s_mqtt.setBufferSize(512);  // Default 256 is too small for status messages with sensor details
+  s_mqtt.setBufferSize(768);  // Default 256 is too small for status messages with sensor + output details
   s_mqtt.setCallback(mqttCallback);
 
   wifiTick();
@@ -268,8 +279,8 @@ void EY_PublishEvent(const char* action, const char* source) {
 void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideActive) {
   if (!s_mqtt.connected()) return;
 
-  // Larger buffer to accommodate sensor details
-  StaticJsonDocument<512> doc;
+  // Larger buffer to accommodate sensor + output details
+  StaticJsonDocument<768> doc;
   doc[EY_MQTT::F_TYPE] = EY_MQTT::TYPE_STATUS;
   doc[EY_MQTT::F_PROP_ID] = DEVICE_ID;
   doc["name"] = DEVICE_NAME;
@@ -291,10 +302,24 @@ void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideAc
     sensor["triggered"] = state ? state->present : false;
   }
 
+  // Add output-level details
+  uint8_t outputCount = EY_Outputs_GetCount();
+  if (outputCount > 0) {
+    JsonArray outputs = details.createNestedArray("outputs");
+    for (uint8_t i = 0; i < outputCount; i++) {
+      JsonObject output = outputs.createNestedObject();
+      output["outputId"] = OUTPUTS[i].id;
+      OutputPinState oState = EY_Outputs_GetState(i);
+      output["state"] = (oState == OutputPinState::ARMED) ? "armed"
+                       : (oState == OutputPinState::RELEASED) ? "released"
+                       : "inactive";
+    }
+  }
+
   String topic = buildStatusTopic();
 
   // Status messages are RETAINED per contract
-  char out[512];
+  char out[768];
   unsigned int len = serializeJson(doc, out, sizeof(out));
   bool ok = s_mqtt.publish(topic.c_str(), (const uint8_t*)out, len, true);  // retained = true
 

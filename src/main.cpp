@@ -2,6 +2,7 @@
 #include "EY_Config.h"
 #include "EY_Mqtt.h"
 #include "EY_Sensors.h"
+#include "EY_Outputs.h"
 
 // =====================
 // Prop State
@@ -49,6 +50,9 @@ static void onSetSolved(bool value, const char* source) {
 
   solvedLatched = true;
 
+  // Unlock outputs (maglocks) on force solve
+  EY_Outputs_Release();
+
   EY_PublishEvent("force_solved", lastChangeSource);
   EY_PublishStatus(true, lastChangeSource, overrideActive);
 }
@@ -66,8 +70,9 @@ static void handleReset() {
   lastChangeSource = EY_MQTT::SRC_DEVICE;
   overrideActive = false;
 
-  // Reset sensor states
+  // Reset sensor states and re-arm outputs (re-lock maglocks)
   EY_Sensors_Reset();
+  EY_Outputs_Reset();
 
   ignoringSensors = true;
   ignoreSensorsStart = millis();
@@ -85,6 +90,12 @@ static void handleReset() {
   Serial.println("[Main] Reset complete");
 }
 
+static void handleArm() {
+  EY_Outputs_Arm();
+  EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
+  Serial.println("[Main] Outputs armed");
+}
+
 // =====================
 // Setup
 // =====================
@@ -98,6 +109,8 @@ void setup() {
   Serial.println(DEVICE_ID);
   Serial.print("Sensors: ");
   Serial.println(SENSOR_COUNT);
+  Serial.print("Outputs: ");
+  Serial.println(OUTPUT_COUNT);
   Serial.println("==============================");
 
   // Initialize hardware
@@ -108,10 +121,14 @@ void setup() {
   // Initialize sensor system
   EY_Sensors_Begin();
 
+  // Initialize output system (maglocks, relays — starts INACTIVE/unlocked)
+  EY_Outputs_Begin();
+
   // Start networking (non-blocking)
   // - MQTT reset triggers handleReset()
   // - MQTT setSolved triggers onSetSolved(...)
-  EY_Net_Begin(handleReset, onSetSolved);
+  // - MQTT arm triggers handleArm()
+  EY_Net_Begin(handleReset, onSetSolved, handleArm);
 
   // Announce initial state (will only publish if MQTT is already connected)
   EY_PublishStatus(false, lastChangeSource, overrideActive);
@@ -179,6 +196,10 @@ void loop() {
     if (!solvedLatched && sensorsSolved) {
       solvedLatched = true;
       lastChangeSource = EY_MQTT::SRC_PLAYER;
+
+      // Unlock outputs (maglocks) on player solve
+      EY_Outputs_Release();
+
       EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
       Serial.println("[Main] SOLVED by player!");
     }
