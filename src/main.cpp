@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <WiFi.h>
+#include <ArduinoOTA.h>
 #include "EY_Config.h"
 #include "EY_Mqtt.h"
 #include "EY_Sensors.h"
@@ -28,6 +30,9 @@ static unsigned long lastResetBlink = 0;
 
 // MQTT status announcement tracking
 static bool statusAnnounced = false;
+
+// OTA deferred init (needs WiFi connected first)
+static bool otaStarted = false;
 
 // BOOT button press tracking
 static unsigned long resetBtnPressedAt = 0;
@@ -130,6 +135,28 @@ void setup() {
   // - MQTT arm triggers handleArm()
   EY_Net_Begin(handleReset, onSetSolved, handleArm);
 
+  // Initialize OTA (Over-The-Air updates)
+  ArduinoOTA.setHostname(DEVICE_ID);
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  ArduinoOTA.setPort(OTA_PORT);
+
+  ArduinoOTA.onStart([]() {
+    Serial.println("[OTA] Update starting...");
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("[OTA] Update complete, rebooting...");
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.print("[OTA] Error: ");
+    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+    else if (error == OTA_END_ERROR) Serial.println("End Failed");
+  });
+
+  // ArduinoOTA.begin() is deferred to loop() — requires WiFi to be connected
+
   // Announce initial state (will only publish if MQTT is already connected)
   EY_PublishStatus(false, lastChangeSource, overrideActive);
 }
@@ -151,6 +178,18 @@ void loop() {
 
   // Networking always ticks, but never blocks prop logic
   EY_Net_Tick();
+
+  // Start OTA once WiFi is connected (deferred from setup)
+  if (!otaStarted && WiFi.status() == WL_CONNECTED) {
+    ArduinoOTA.begin();
+    otaStarted = true;
+    Serial.println("[OTA] Ready");
+  }
+
+  // Handle OTA updates (must be called frequently)
+  if (otaStarted) {
+    ArduinoOTA.handle();
+  }
 
   // If we (re)connected to MQTT, announce current status once
   if (EY_Mqtt_Connected() && !statusAnnounced) {

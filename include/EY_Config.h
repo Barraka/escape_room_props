@@ -3,7 +3,7 @@
 #include "EY_Types.h"  // For SensorDef, PresentWhen, SolveMode
 
 // Firmware Version (increment when making changes)
-static constexpr const char* FIRMWARE_VERSION = "1.2.0";
+static constexpr const char* FIRMWARE_VERSION = "1.3.0";
 
 // MQTT Contract: MQTT_CONTRACT_v1.md (v1.0 FROZEN)
 static constexpr const char* MQTT_CONTRACT_VERSION = "1.0";
@@ -28,6 +28,12 @@ static const char* WIFI_PASS = "y6zj8asvtvjxy524qdzq";
 // =====================
 static const char* MQTT_HOST = "192.168.1.99";
 static const int   MQTT_PORT = 1883;
+
+// =====================
+// OTA (Over-The-Air updates)
+// =====================
+static const char* OTA_PASSWORD = "escapeyourself";  // Shared password for all props
+static const int   OTA_PORT     = 3232;              // Default ArduinoOTA port
 
 // =====================
 // Hardware Pins (edit per prop)
@@ -71,7 +77,7 @@ static constexpr SolveMode SOLVE_MODE = SolveMode::ANY;
 //
 static const OutputDef OUTPUTS[] = {
   //  id           pin  activeLow
-  { "maglock1",    25,  true },
+  { "maglock1",    25,  false },  // XY-MOS module: HIGH = ON (active-high)
 };
 static constexpr uint8_t OUTPUT_COUNT = sizeof(OUTPUTS) / sizeof(OUTPUTS[0]);
 
