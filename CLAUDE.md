@@ -166,6 +166,14 @@ sudo systemctl status mosquitto
 
 ## Recent Changes
 
+### v1.4.0 — NTP Time Sync
+- **Real timestamps**: MQTT messages now include Unix epoch timestamps (seconds since 1970) instead of `millis()`
+- **Automatic NTP sync**: `configTime()` runs once after WiFi connects, syncs from router (`192.168.1.1`) or `pool.ntp.org`
+- **Graceful fallback**: If NTP is unavailable (no internet, no router NTP), falls back to `millis()` transparently
+  - Room controller can distinguish: epoch values are > 1,000,000,000; millis() values are much smaller
+- **UTC timestamps**: All times are UTC (timezone offset = 0); room controller handles local time conversion
+- **NTP config**: Server addresses and timezone in `EY_Config.h`
+
 ### v1.3.0 — Per-Prop Config & Static IPs
 - **Per-prop config files**: Moved prop-specific config (identity, sensors, outputs, static IP) from `EY_Config.h` to individual files in `include/props/`
 - **PlatformIO multi-environment**: Each prop has its own build environment + OTA variant in `platformio.ini`
@@ -192,10 +200,6 @@ sudo systemctl status mosquitto
 - **GPIO 12 strapping pin warning**: Added comment warning about ESP32 boot behavior
 - **Remote sensor triggering**: `set_output` command forces sensor to triggered state
 - **Sensor-level reporting**: Status messages include `details.sensors` array
-
-## Future Development
-
-- **NTP time sync**: Replace `millis()` with real timestamps
 
 ## Related Projects
 

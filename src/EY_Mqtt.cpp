@@ -6,6 +6,7 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <time.h>
 
 static WiFiClient    s_wifi;
 static PubSubClient  s_mqtt(s_wifi);
@@ -16,6 +17,17 @@ static ArmCallback s_onArm = nullptr;
 // retry timers (non-blocking)
 static unsigned long s_lastWifiAttempt = 0;
 static unsigned long s_lastMqttAttempt = 0;
+
+// NTP
+static bool s_ntpStarted = false;
+
+// Returns Unix epoch (seconds) if NTP has synced, otherwise falls back to millis().
+// The room controller can tell the difference: epoch > 1000000000 (~2001), millis() won't be.
+static unsigned long getTimestamp() {
+  time_t now = time(nullptr);
+  if (now > 1000000000) return (unsigned long)now;  // NTP synced
+  return millis();                                    // Fallback
+}
 
 // Topic helpers following contract: ey/<site>/<room>/prop/<propId>/...
 static String buildTopicBase() {
@@ -139,6 +151,12 @@ static void wifiTick() {
       Serial.print("WiFi OK. IP=");
       Serial.println(WiFi.localIP());
       printedWifi = true;
+    }
+    // Start NTP sync once (non-blocking, runs in background)
+    if (!s_ntpStarted) {
+      configTime(NTP_GMT_OFFSET, NTP_DST_OFFSET, NTP_SERVER1, NTP_SERVER2);
+      s_ntpStarted = true;
+      Serial.println("NTP sync started");
     }
     return;
   }
@@ -265,7 +283,7 @@ void EY_PublishEvent(const char* action, const char* source) {
   doc[EY_MQTT::F_PROP_ID] = DEVICE_ID;
   doc[EY_MQTT::F_ACTION] = action;
   doc[EY_MQTT::F_SOURCE] = source ? source : EY_MQTT::SRC_DEVICE;
-  doc[EY_MQTT::F_TIMESTAMP] = millis();  // Note: real timestamp requires NTP
+  doc[EY_MQTT::F_TIMESTAMP] = getTimestamp();
 
   String topic = buildEventTopic();
   publishJson(topic, doc);
@@ -289,7 +307,7 @@ void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideAc
   doc[EY_MQTT::F_SOLVED] = solved;
   doc[EY_MQTT::F_LAST_CHANGE_SOURCE] = lastChangeSource ? lastChangeSource : EY_MQTT::SRC_DEVICE;
   doc[EY_MQTT::F_OVERRIDE] = overrideActive;
-  doc[EY_MQTT::F_TIMESTAMP] = millis();  // Note: real timestamp requires NTP
+  doc[EY_MQTT::F_TIMESTAMP] = getTimestamp();
 
   // Add sensor-level details for GM Dashboard
   JsonObject details = doc.createNestedObject("details");

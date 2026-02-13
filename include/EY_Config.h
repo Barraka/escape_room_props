@@ -3,7 +3,7 @@
 #include "EY_Types.h"  // For SensorDef, PresentWhen, SolveMode
 
 // Firmware Version (increment when making changes)
-static constexpr const char* FIRMWARE_VERSION = "1.3.0";
+static constexpr const char* FIRMWARE_VERSION = "1.4.0";
 
 // MQTT Contract: MQTT_CONTRACT_v1.md (v1.0 FROZEN)
 static constexpr const char* MQTT_CONTRACT_VERSION = "1.0";
@@ -24,6 +24,14 @@ static const IPAddress WIFI_DNS(192, 168, 1, 1);
 // =====================
 static const char* MQTT_HOST = "192.168.1.99";
 static const int   MQTT_PORT = 1883;
+
+// =====================
+// NTP (Real-time clock sync)
+// =====================
+static const char* NTP_SERVER1  = "192.168.1.1";   // Router (often has built-in NTP)
+static const char* NTP_SERVER2  = "pool.ntp.org";   // Fallback (requires internet)
+static const long  NTP_GMT_OFFSET = 0;              // UTC (room controller handles timezone)
+static const int   NTP_DST_OFFSET = 0;              // No DST adjustment (using UTC)
 
 // =====================
 // OTA (Over-The-Air updates)
