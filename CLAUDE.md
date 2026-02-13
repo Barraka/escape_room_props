@@ -19,20 +19,24 @@ ESP32 Prop ← MQTT → Raspberry Pi/MiniPC ← WebSocket → GM Dashboard
 ## Project Location
 
 ```
-c:\Users\Manu\Documents\PlatformIO\Projects\EY_Prop_Base_PIO\
+c:\02 - GM Manager\EY_Prop_Base_PIO\
 ```
 
 ## File Structure
 
 | File | Purpose | Edit? |
 |------|---------|-------|
-| `include/EY_Config.h` | Per-prop configuration (identity, sensors, WiFi) | **YES - only file to edit for new props** |
+| `include/EY_Config.h` | Shared configuration (WiFi, MQTT, OTA, pins, timing) | Rarely |
+| `include/props/*.h` | Per-prop config (identity, sensors, outputs, static IP) | **YES - one file per prop** |
 | `include/EY_Types.h` | Shared type definitions (enums, structs) | No |
 | `include/EY_Sensors.h` | Sensor API interface | No |
 | `include/EY_Mqtt.h` | MQTT and networking API | No |
+| `include/EY_Outputs.h` | Output pin API (maglocks, relays) | No |
 | `src/EY_Sensors.cpp` | Sensor polling and trigger detection | No |
+| `src/EY_Outputs.cpp` | Output pin control (arm/release) | No |
 | `src/EY_Mqtt.cpp` | MQTT communication layer | No |
 | `src/main.cpp` | Application entry point, LED feedback, reset logic | Rarely (custom behavior only) |
+| `platformio.ini` | PlatformIO environments (one per prop + OTA variants) | When adding a new prop |
 
 ## Hardware
 
@@ -40,11 +44,11 @@ c:\Users\Manu\Documents\PlatformIO\Projects\EY_Prop_Base_PIO\
 - **Framework**: Arduino via PlatformIO
 - **Dependencies**: PubSubClient (MQTT), ArduinoJson
 
-### Current Pin Configuration
+### Common Pin Configuration
 - **GPIO 2**: Onboard blue LED (feedback)
 - **GPIO 0**: BOOT button (long-press for reset)
-- **GPIO 12**: RFID sensor (HIGH when tag present)
-- **GPIO 27**: Magnet/reed switch (LOW when magnet present)
+
+Per-prop pin assignments are defined in each prop's config file (`include/props/*.h`).
 
 ## Network Configuration
 
@@ -62,10 +66,12 @@ Base: `ey/<site>/<room>/prop/<propId>/`
 | `/event` | No | Sensor triggers, one-shot actions |
 | `/cmd` | No | Commands from room controller |
 
-### Current Device Identity
-- Site: `default`
-- Room: `magie`
-- Device: `magie_roueFortune`
+### Current Props
+
+| Prop | Device ID | Static IP | Sensors | Outputs |
+|------|-----------|-----------|---------|---------|
+| Roue de la Fortune | `magie_roueFortune` | 192.168.1.193 | rfid1 (pin 12), magnet1 (pin 27) | maglock1 (pin 25) |
+| Test Magnet | `magie_test_magnet` | 192.168.1.102 | magnet1 (pin 12) | None |
 
 Full topic example: `ey/default/magie/prop/magie_roueFortune/status`
 
@@ -84,10 +90,22 @@ Full topic example: `ey/default/magie/prop/magie_roueFortune/status`
 
 ## Useful Commands
 
-### Build and Upload
+### Build a Specific Prop
 ```bash
-cd "c:\Users\Manu\Documents\PlatformIO\Projects\EY_Prop_Base_PIO"
-pio run --target upload
+pio run -e magie_roueFortune
+pio run -e magie_test_magnet
+```
+
+### Flash via USB
+```bash
+pio run -e magie_roueFortune --target upload
+```
+
+### Flash via OTA (WiFi)
+```bash
+pio run -e magie_roueFortune-ota --target upload
+# Or override IP:
+pio run -e magie_roueFortune-ota --target upload --upload-port 192.168.1.193
 ```
 
 ### Monitor Serial Output
@@ -100,7 +118,7 @@ pio device monitor
 # All messages from all props
 mosquitto_sub -h localhost -t "ey/#" -v
 
-# Just this prop
+# Just one prop
 mosquitto_sub -h localhost -t "ey/default/magie/prop/magie_roueFortune/#" -v
 ```
 
@@ -111,13 +129,26 @@ sudo systemctl status mosquitto
 
 ## Setting Up a New Prop
 
-1. Copy the entire project folder
-2. Open `include/EY_Config.h`
-3. Change `DEVICE_ID` to a unique name
-4. Change `ROOM_ID` if different
-5. Define `SENSORS[]` array with pin numbers and polarities
-6. Set `SOLVE_MODE` to `ANY` or `ALL`
-7. Flash to ESP32
+1. Create a new file in `include/props/` (e.g., `magie_newProp.h`)
+   - Copy an existing prop file as template
+   - Set `DEVICE_ID`, `DEVICE_NAME`, `STATIC_IP`
+   - Define `SENSORS[]` with pin numbers and polarities
+   - Define `OUTPUTS[]` if the prop controls maglocks/relays
+   - Set `SOLVE_MODE` to `ANY` or `ALL`
+2. Add PlatformIO environments in `platformio.ini`:
+   ```ini
+   [env:magie_newProp]
+   build_flags = -DPROP_CONFIG=\"props/magie_newProp.h\"
+
+   [env:magie_newProp-ota]
+   extends = env:magie_newProp
+   upload_protocol = espota
+   upload_port = 192.168.1.XXX
+   upload_flags =
+     --auth=escapeyourself
+   ```
+3. Flash to ESP32 via USB: `pio run -e magie_newProp --target upload`
+4. Subsequent updates can use OTA: `pio run -e magie_newProp-ota --target upload`
 
 ### Sensor Polarity Quick Reference
 
@@ -135,26 +166,32 @@ sudo systemctl status mosquitto
 
 ## Recent Changes
 
+### v1.3.0 — Per-Prop Config & Static IPs
+- **Per-prop config files**: Moved prop-specific config (identity, sensors, outputs, static IP) from `EY_Config.h` to individual files in `include/props/`
+- **PlatformIO multi-environment**: Each prop has its own build environment + OTA variant in `platformio.ini`
+- **Static IPs**: Each ESP32 gets a fixed IP via `WiFi.config()` for deterministic addressing
+- **ArduinoOTA**: Over-the-air flashing via WiFi (deferred init — `.begin()` called in `loop()` after WiFi connects to avoid crash)
+  - Password-protected (shared password in `EY_Config.h`)
+  - Hostname set to `DEVICE_ID` for mDNS discovery
+
+### v1.2.0 — Output Pin Support
+- **Output pins** (maglocks, relays): New `EY_Outputs` module with arm/release lifecycle
+  - Outputs arm on solve, release on reset
+  - GM can trigger individual outputs via `set_output` command
+- **Output-level reporting**: Status messages include `details.outputs` array with state (inactive/armed/released)
+- **MQTT buffer size**: Increased to 768 bytes to accommodate sensor + output details
+
 ### v1.1.0 — Audit Bug Fix Pass
 - **MQTT field names**: Aligned with Contract v1.0 — `deviceId` → `propId`, `ts` → `timestamp`
 - **LWT topic**: Moved from `/status` to dedicated `/lwt` topic for clean separation
 - **DEVICE_NAME**: Added to config and included in status messages for auto-discovery
-- **MQTT buffer size**: Increased to 512 bytes (default 256 was too small for status with sensor details)
 - **Sensor debouncing**: Added configurable `DEBOUNCE_MS` (20ms default) to prevent false triggers from mechanical noise
-- **Force-trigger locking**: GM-triggered sensors now stay locked (`forceLocked`) until reset, preventing physical state from overriding GM actions
-- **LED mirror configurable**: LED mirror sensor is now configurable via `LED_MIRROR_SENSOR` index instead of hardcoded GPIO 27
-- **Millis overflow safety**: Replaced `millis() < deadline` patterns with `millis() - start >= duration` for correct 49-day rollover handling
-- **GPIO 12 strapping pin warning**: Added comment warning about ESP32 GPIO 12 boot behavior
-
-- **Remote sensor triggering** (added): ESP32 now handles `set_output` command from GM Dashboard
-  - MQTT command format: `{"type":"cmd","command":"set_output","sensorId":"rfid1"}`
-  - Forces sensor to triggered state regardless of physical input
-  - Publishes event with source "gm" and updates status
-
-- **Sensor-level reporting** (added): MQTT status messages now include `details.sensors` array
-  - Format: `"details": { "sensors": [{ "sensorId": "rfid1", "triggered": true }, ...] }`
-  - Enables GM Dashboard to show individual sensor states
-  - Enables GM to trigger individual sensors remotely
+- **Force-trigger locking**: GM-triggered sensors now stay locked (`forceLocked`) until reset
+- **LED mirror configurable**: Via `LED_MIRROR_SENSOR` index instead of hardcoded GPIO
+- **Millis overflow safety**: Replaced `millis() < deadline` with `millis() - start >= duration`
+- **GPIO 12 strapping pin warning**: Added comment warning about ESP32 boot behavior
+- **Remote sensor triggering**: `set_output` command forces sensor to triggered state
+- **Sensor-level reporting**: Status messages include `details.sensors` array
 
 ## Future Development
 
