@@ -151,6 +151,7 @@ static void wifiTick() {
   s_lastWifiAttempt = millis();
 
   WiFi.mode(WIFI_STA);
+  WiFi.config(STATIC_IP, WIFI_GATEWAY, WIFI_SUBNET, WIFI_DNS);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 }
 

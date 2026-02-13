@@ -9,6 +9,9 @@ static const char* ROOM_ID     = "magie";
 static const char* DEVICE_ID   = "magie_test_magnet";
 static const char* DEVICE_NAME = "Test Magnet";
 
+// Static IP
+static const IPAddress STATIC_IP(192, 168, 1, 102);
+
 // Sensors
 // WARNING: GPIO 12 is an ESP32 strapping pin. If pulled HIGH at boot, the chip
 // may fail to start (wrong flash voltage). Prefer GPIO 13, 14, 25, 26, 32, 33.

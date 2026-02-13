@@ -14,6 +14,11 @@ static constexpr const char* MQTT_CONTRACT_VERSION = "1.0";
 static const char* WIFI_SSID = "SFR_3474";
 static const char* WIFI_PASS = "y6zj8asvtvjxy524qdzq";
 
+// Static IP network settings (same for all props on this network)
+static const IPAddress WIFI_GATEWAY(192, 168, 1, 1);
+static const IPAddress WIFI_SUBNET(255, 255, 255, 0);
+static const IPAddress WIFI_DNS(192, 168, 1, 1);
+
 // =====================
 // MQTT (same per room)
 // =====================
