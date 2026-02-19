@@ -22,7 +22,7 @@ static const IPAddress WIFI_DNS(192, 168, 1, 1);
 // =====================
 // MQTT (same per room)
 // =====================
-static const char* MQTT_HOST = "192.168.1.99";
+static const char* MQTT_HOST = "192.168.1.10";
 static const int   MQTT_PORT = 1883;
 
 // =====================

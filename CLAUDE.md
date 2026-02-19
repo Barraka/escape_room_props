@@ -53,7 +53,7 @@ Per-prop pin assignments are defined in each prop's config file (`include/props/
 ## Network Configuration
 
 - **WiFi**: SFR_3474
-- **MQTT Broker**: Raspberry Pi at `192.168.1.99:1883`
+- **MQTT Broker**: Raspberry Pi at `192.168.1.10:1883`
 - **MQTT Software**: Mosquitto (enabled, auto-starts on Pi boot)
 
 ## MQTT Topics (Contract v1.0)
