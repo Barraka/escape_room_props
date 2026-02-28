@@ -6,6 +6,10 @@
 #include "EY_Sensors.h"
 #include "EY_Outputs.h"
 
+#ifdef HAS_SHAKER
+#include "EY_Shaker.h"
+#endif
+
 // =====================
 // Prop State
 // =====================
@@ -79,6 +83,10 @@ static void handleReset() {
   EY_Sensors_Reset();
   EY_Outputs_Reset();
 
+#ifdef HAS_SHAKER
+  EY_Shaker_Reset();
+#endif
+
   ignoringSensors = true;
   ignoreSensorsStart = millis();
 
@@ -128,6 +136,11 @@ void setup() {
 
   // Initialize output system (maglocks, relays — starts INACTIVE/unlocked)
   EY_Outputs_Begin();
+
+#ifdef HAS_SHAKER
+  // Initialize shaker module (uses receiver pin from first sensor)
+  EY_Shaker_Begin(SENSORS[0].pin);
+#endif
 
   // Start networking (non-blocking)
   // - MQTT reset triggers handleReset()
@@ -229,6 +242,51 @@ void loop() {
   // ---- Sensor processing ----
   if (!ignoringSensors || millis() - ignoreSensorsStart >= IGNORE_SENSORS_MS) {
     ignoringSensors = false;
+
+#ifdef HAS_SHAKER
+    // Shaker: custom solve logic replaces generic EY_Sensors_Tick()
+    bool shakerSolved = EY_Shaker_Tick();
+
+    // Periodically publish status with shakeProgress
+    {
+      static unsigned long lastShakerStatus = 0;
+      if (millis() - lastShakerStatus >= SHAKE_REPORT_INTERVAL_MS) {
+        lastShakerStatus = millis();
+        EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
+      }
+    }
+
+    // LED: blink proportional to shake progress
+    if (!solvedLatched) {
+      uint8_t progress = EY_Shaker_GetProgress();
+      if (progress == 0) {
+        setLed(false);
+      } else {
+        // Blink faster as progress increases (1000ms at 1% → 100ms at 100%)
+        unsigned long blinkRate = 1000 - (progress * 9);
+        if (millis() - lastBlink >= blinkRate) {
+          ledState = !ledState;
+          setLed(ledState);
+          lastBlink = millis();
+        }
+      }
+    } else {
+      // Solved: solid LED
+      setLed(true);
+    }
+
+    // Latch solved state
+    if (!solvedLatched && shakerSolved) {
+      solvedLatched = true;
+      lastChangeSource = EY_MQTT::SRC_PLAYER;
+
+      // Unlock outputs (maglocks) on player solve
+      EY_Outputs_Release();
+
+      EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
+      Serial.println("[Main] SOLVED by player!");
+    }
+#else
     bool sensorsSolved = EY_Sensors_Tick();
 
     // Latch solved state
@@ -242,5 +300,6 @@ void loop() {
       EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
       Serial.println("[Main] SOLVED by player!");
     }
+#endif
   }
 }

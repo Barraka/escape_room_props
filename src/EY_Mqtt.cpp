@@ -3,6 +3,10 @@
 #include "EY_Sensors.h"
 #include "EY_Outputs.h"
 
+#ifdef HAS_SHAKER
+#include "EY_Shaker.h"
+#endif
+
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
@@ -320,6 +324,11 @@ void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideAc
     sensor["sensorId"] = SENSORS[i].id;
     sensor["triggered"] = state ? state->present : false;
   }
+
+#ifdef HAS_SHAKER
+  // Add shake progress (0-100) for GM visibility
+  details["shakeProgress"] = EY_Shaker_GetProgress();
+#endif
 
   // Add output-level details
   uint8_t outputCount = EY_Outputs_GetCount();

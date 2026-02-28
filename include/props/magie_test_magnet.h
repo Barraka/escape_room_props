@@ -4,13 +4,13 @@
 // =====================================================
 
 // Identity
-static const char* SITE_ID     = "default";
-static const char* ROOM_ID     = "magie";
+static const char* SITE_ID     = "ey1";
+static const char* ROOM_ID     = "hollywood";
 static const char* DEVICE_ID   = "magie_test_magnet";
 static const char* DEVICE_NAME = "Test Magnet";
 
 // Static IP
-static const IPAddress STATIC_IP(192, 168, 1, 102);
+static const IPAddress STATIC_IP(192, 168, 2, 102);
 
 // Sensors
 // WARNING: GPIO 12 is an ESP32 strapping pin. If pulled HIGH at boot, the chip

@@ -32,8 +32,10 @@ c:\02 - GM Manager\EY_Prop_Base_PIO\
 | `include/EY_Sensors.h` | Sensor API interface | No |
 | `include/EY_Mqtt.h` | MQTT and networking API | No |
 | `include/EY_Outputs.h` | Output pin API (maglocks, relays) | No |
+| `include/EY_Shaker.h` | Shaker module API (433MHz shake detection) | No |
 | `src/EY_Sensors.cpp` | Sensor polling and trigger detection | No |
 | `src/EY_Outputs.cpp` | Output pin control (arm/release) | No |
+| `src/EY_Shaker.cpp` | Shaker module implementation (guarded by `#ifdef HAS_SHAKER`) | No |
 | `src/EY_Mqtt.cpp` | MQTT communication layer | No |
 | `src/main.cpp` | Application entry point, LED feedback, reset logic | Rarely (custom behavior only) |
 | `platformio.ini` | PlatformIO environments (one per prop + OTA variants) | When adding a new prop |
@@ -52,8 +54,8 @@ Per-prop pin assignments are defined in each prop's config file (`include/props/
 
 ## Network Configuration
 
-- **WiFi**: SFR_3474
-- **MQTT Broker**: Raspberry Pi at `192.168.1.10:1883`
+- **WiFi**: Hollywood (password: Escape37) — TP-Link AC1200, channel 1
+- **MQTT Broker**: Raspberry Pi at `192.168.2.10:1883`
 - **MQTT Software**: Mosquitto (enabled, auto-starts on Pi boot)
 
 ## MQTT Topics (Contract v1.0)
@@ -70,10 +72,11 @@ Base: `ey/<site>/<room>/prop/<propId>/`
 
 | Prop | Device ID | Static IP | Sensors | Outputs |
 |------|-----------|-----------|---------|---------|
-| Roue de la Fortune | `magie_roueFortune` | 192.168.1.193 | rfid1 (pin 12), magnet1 (pin 27) | maglock1 (pin 25) |
-| Test Magnet | `magie_test_magnet` | 192.168.1.102 | magnet1 (pin 12) | None |
+| Roue de la Fortune | `magie_roueFortune` | 192.168.2.193 | rfid1 (pin 12), magnet1 (pin 27) | maglock1 (pin 25) |
+| Test Magnet | `magie_test_magnet` | 192.168.2.102 | magnet1 (pin 12) | None |
+| Shaker | `hollywood_shaker` | 192.168.2.194 | shake (pin 13, 433MHz rx) | maglock1 (pin 25) |
 
-Full topic example: `ey/default/magie/prop/magie_roueFortune/status`
+Full topic example: `ey/ey1/hollywood/prop/magie_roueFortune/status`
 
 ## Current Behavior
 
@@ -94,6 +97,7 @@ Full topic example: `ey/default/magie/prop/magie_roueFortune/status`
 ```bash
 pio run -e magie_roueFortune
 pio run -e magie_test_magnet
+pio run -e hollywood_shaker
 ```
 
 ### Flash via USB
@@ -105,7 +109,7 @@ pio run -e magie_roueFortune --target upload
 ```bash
 pio run -e magie_roueFortune-ota --target upload
 # Or override IP:
-pio run -e magie_roueFortune-ota --target upload --upload-port 192.168.1.193
+pio run -e magie_roueFortune-ota --target upload --upload-port 192.168.2.193
 ```
 
 ### Monitor Serial Output
@@ -119,7 +123,7 @@ pio device monitor
 mosquitto_sub -h localhost -t "ey/#" -v
 
 # Just one prop
-mosquitto_sub -h localhost -t "ey/default/magie/prop/magie_roueFortune/#" -v
+mosquitto_sub -h localhost -t "ey/ey1/hollywood/prop/magie_roueFortune/#" -v
 ```
 
 ### Check Mosquitto Status on Pi
@@ -129,7 +133,7 @@ sudo systemctl status mosquitto
 
 ## Setting Up a New Prop
 
-1. Create a new file in `include/props/` (e.g., `magie_newProp.h`)
+1. Create a new file in `include/props/` (e.g., `hollywood_newProp.h`)
    - Copy an existing prop file as template
    - Set `DEVICE_ID`, `DEVICE_NAME`, `STATIC_IP`
    - Define `SENSORS[]` with pin numbers and polarities
@@ -137,18 +141,18 @@ sudo systemctl status mosquitto
    - Set `SOLVE_MODE` to `ANY` or `ALL`
 2. Add PlatformIO environments in `platformio.ini`:
    ```ini
-   [env:magie_newProp]
-   build_flags = -DPROP_CONFIG=\"props/magie_newProp.h\"
+   [env:hollywood_newProp]
+   build_flags = -DPROP_CONFIG=\"props/hollywood_newProp.h\"
 
-   [env:magie_newProp-ota]
-   extends = env:magie_newProp
+   [env:hollywood_newProp-ota]
+   extends = env:hollywood_newProp
    upload_protocol = espota
-   upload_port = 192.168.1.XXX
+   upload_port = 192.168.2.XXX
    upload_flags =
      --auth=escapeyourself
    ```
-3. Flash to ESP32 via USB: `pio run -e magie_newProp --target upload`
-4. Subsequent updates can use OTA: `pio run -e magie_newProp-ota --target upload`
+3. Flash to ESP32 via USB: `pio run -e hollywood_newProp --target upload`
+4. Subsequent updates can use OTA: `pio run -e hollywood_newProp-ota --target upload`
 
 ### Sensor Polarity Quick Reference
 
@@ -158,17 +162,41 @@ sudo systemctl status mosquitto
 | RFID (high when tag) | `HIGH_LEVEL` | Module outputs HIGH when tag present |
 | Button (to GND) | `LOW_LEVEL` | Button between pin and GND, INPUT_PULLUP |
 | IR break-beam | `HIGH_LEVEL` | Output HIGH when beam broken (typical) |
+| 433MHz receiver | `HIGH_LEVEL` | DATA pin HIGH when transmitter active |
 
 ## Known Issues / Notes
 
 - **MQTT blocking**: If the MQTT broker is unreachable, `s_mqtt.connect()` can block for 1-2 seconds. The LED reading was moved to the top of `loop()` to ensure instant sensor response regardless of network state.
 - **Error code -2**: Means MQTT broker is unreachable (check Pi is on, Mosquitto running)
 
+## Custom Modules
+
+### Shaker (`EY_Shaker.h` / `EY_Shaker.cpp`)
+
+First custom module extending the base firmware with prop-specific logic.
+
+- **Feature guard**: `#define HAS_SHAKER` in prop config — enables conditional compilation in `main.cpp`, `EY_Mqtt.cpp`, and `EY_Shaker.cpp`
+- **Hardware**: 433MHz wireless vibration sensor (inside shaker) + 433MHz receiver module (DATA → GPIO)
+- **Algorithm**: Accumulates time while receiver DATA pin is HIGH, decays when LOW, solves at configurable target
+- **Noise filter**: 10ms debounce rejects brief RF interference
+- **MQTT**: Publishes `shakeProgress` (0-100) in `details` of status messages
+- **LED**: Blinks proportionally to progress (faster = closer to solved), solid when solved
+- **Tuning**: `SHAKE_TARGET_MS`, `SHAKE_DECAY_PER_SEC`, `SHAKE_REPORT_INTERVAL_MS` in prop config
+
+**Pattern for future custom modules**: Define a feature guard (`#define HAS_XXX`) in the prop config, wrap the `.cpp` in `#ifdef`, add `#ifdef` blocks in `main.cpp` for init/tick/reset, and optionally in `EY_Mqtt.cpp` for extra status fields.
+
 ## Recent Changes
+
+### v1.5.0 — Shaker Module & Feature Guards
+- **EY_Shaker module**: New custom module for 433MHz shake detection (`EY_Shaker.h`, `EY_Shaker.cpp`)
+- **Feature guard pattern**: `#define HAS_SHAKER` enables conditional compilation — first use of `#ifdef` in the codebase
+- **Shaker prop**: `hollywood_shaker` config with 433MHz receiver on GPIO 13, maglock on GPIO 25, static IP 192.168.2.194
+- **MQTT status extension**: `details.shakeProgress` (0-100) published for shaker props
+- **LED progress feedback**: Blink rate scales with shake progress (1000ms→100ms)
 
 ### v1.4.0 — NTP Time Sync
 - **Real timestamps**: MQTT messages now include Unix epoch timestamps (seconds since 1970) instead of `millis()`
-- **Automatic NTP sync**: `configTime()` runs once after WiFi connects, syncs from router (`192.168.1.1`) or `pool.ntp.org`
+- **Automatic NTP sync**: `configTime()` runs once after WiFi connects, syncs from router (`192.168.2.1`) or `pool.ntp.org`
 - **Graceful fallback**: If NTP is unavailable (no internet, no router NTP), falls back to `millis()` transparently
   - Room controller can distinguish: epoch values are > 1,000,000,000; millis() values are much smaller
 - **UTC timestamps**: All times are UTC (timezone offset = 0); room controller handles local time conversion
