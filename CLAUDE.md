@@ -74,7 +74,7 @@ Base: `ey/<site>/<room>/prop/<propId>/`
 |------|-----------|-----------|---------|---------|
 | Roue de la Fortune | `magie_roueFortune` | 192.168.2.193 | rfid1 (pin 12), magnet1 (pin 27) | maglock1 (pin 25) |
 | Test Magnet | `magie_test_magnet` | 192.168.2.102 | magnet1 (pin 12) | None |
-| Shaker | `hollywood_shaker` | 192.168.2.194 | shake (pin 13, 433MHz rx) | maglock1 (pin 25) |
+| Shaker | `hollywood_shaker` | 192.168.2.194 | shake (ESP-NOW from ESP32-C3+MPU6050) | maglock1 (pin 25) |
 
 Full topic example: `ey/ey1/hollywood/prop/magie_roueFortune/status`
 
@@ -168,6 +168,7 @@ sudo systemctl status mosquitto
 
 - **MQTT blocking**: If the MQTT broker is unreachable, `s_mqtt.connect()` can block for 1-2 seconds. The LED reading was moved to the top of `loop()` to ensure instant sensor response regardless of network state.
 - **Error code -2**: Means MQTT broker is unreachable (check Pi is on, Mosquitto running)
+- **433MHz RXB6 receivers are unusable for presence detection**: AGC amplifies noise to match signal levels when no strong signal present. Pulse-width filtering doesn't help — noise pulses fall in the same 100–2000µs range as real OOK signals. Use a learning receiver (hardware code matching) or switch to 2.4GHz digital (ESP-NOW / nRF24L01+) instead.
 
 ## Custom Modules
 
@@ -176,23 +177,28 @@ sudo systemctl status mosquitto
 First custom module extending the base firmware with prop-specific logic.
 
 - **Feature guard**: `#define HAS_SHAKER` in prop config — enables conditional compilation in `main.cpp`, `EY_Mqtt.cpp`, and `EY_Shaker.cpp`
-- **Hardware**: 433MHz wireless vibration sensor (inside shaker) + 433MHz receiver module (DATA → GPIO)
-- **Algorithm**: Accumulates time while receiver DATA pin is HIGH, decays when LOW, solves at configurable target
-- **Noise filter**: 10ms debounce rejects brief RF interference
+- **Hardware (planned)**: ESP32-C3 SuperMini + MPU6050 accelerometer inside the shaker, communicating via **ESP-NOW** (2.4GHz peer-to-peer) to the main ESP32. No extra receiver hardware needed — ESP32 has built-in 2.4GHz radio.
+  - Previous 433MHz approach (RXB6 receiver) abandoned — AGC noise indistinguishable from real signals
+  - Plan A (in progress): QIACHIP 433MHz learning receiver as simpler alternative (ordered, awaiting delivery)
+  - Plan C (fallback): ESP32-C3 + MPU6050 + ESP-NOW + LiPo battery inside shaker
+- **Algorithm**: Accumulates shake time, decays when idle, solves at configurable target
 - **MQTT**: Publishes `shakeProgress` (0-100) in `details` of status messages
 - **LED**: Blinks proportionally to progress (faster = closer to solved), solid when solved
 - **Tuning**: `SHAKE_TARGET_MS`, `SHAKE_DECAY_PER_SEC`, `SHAKE_REPORT_INTERVAL_MS` in prop config
+- **Code status**: `EY_Shaker.cpp` currently has pulse-width filtered edge counting (diagnostic mode, threshold=9999). Will be rewritten for either digitalRead (Plan A) or ESP-NOW receive callback (Plan C) once hardware arrives.
 
 **Pattern for future custom modules**: Define a feature guard (`#define HAS_XXX`) in the prop config, wrap the `.cpp` in `#ifdef`, add `#ifdef` blocks in `main.cpp` for init/tick/reset, and optionally in `EY_Mqtt.cpp` for extra status fields.
 
 ## Recent Changes
 
 ### v1.5.0 — Shaker Module & Feature Guards
-- **EY_Shaker module**: New custom module for 433MHz shake detection (`EY_Shaker.h`, `EY_Shaker.cpp`)
+- **EY_Shaker module**: New custom module for shake detection (`EY_Shaker.h`, `EY_Shaker.cpp`)
 - **Feature guard pattern**: `#define HAS_SHAKER` enables conditional compilation — first use of `#ifdef` in the codebase
-- **Shaker prop**: `hollywood_shaker` config with 433MHz receiver on GPIO 13, maglock on GPIO 25, static IP 192.168.2.194
+- **Shaker prop**: `hollywood_shaker` config with maglock on GPIO 25, static IP 192.168.2.194
 - **MQTT status extension**: `details.shakeProgress` (0-100) published for shaker props
 - **LED progress feedback**: Blink rate scales with shake progress (1000ms→100ms)
+- **433MHz abandoned**: RXB6 receiver AGC noise is indistinguishable from real signals at software level. Tried: raw edge counting, rc-switch code decoding, pulse-width filtered edge counting — all failed.
+- **New approach**: Plan A = QIACHIP 433MHz learning receiver (ordered). Plan C = ESP32-C3 SuperMini + MPU6050 accelerometer inside shaker, communicating via ESP-NOW to main ESP32 (no receiver hardware needed)
 
 ### v1.4.0 — NTP Time Sync
 - **Real timestamps**: MQTT messages now include Unix epoch timestamps (seconds since 1970) instead of `millis()`
