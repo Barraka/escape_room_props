@@ -33,9 +33,11 @@ c:\02 - GM Manager\EY_Prop_Base_PIO\
 | `include/EY_Mqtt.h` | MQTT and networking API | No |
 | `include/EY_Outputs.h` | Output pin API (maglocks, relays) | No |
 | `include/EY_Shaker.h` | Shaker module API (433MHz shake detection) | No |
+| `include/EY_Wiegand.h` | Wiegand keypad reader API | No |
 | `src/EY_Sensors.cpp` | Sensor polling and trigger detection | No |
 | `src/EY_Outputs.cpp` | Output pin control (arm/release) | No |
 | `src/EY_Shaker.cpp` | Shaker module implementation (guarded by `#ifdef HAS_SHAKER`) | No |
+| `src/EY_Wiegand.cpp` | Wiegand reader implementation (guarded by `#ifdef HAS_WIEGAND`) | No |
 | `src/EY_Mqtt.cpp` | MQTT communication layer | No |
 | `src/main.cpp` | Application entry point, LED feedback, reset logic | Rarely (custom behavior only) |
 | `platformio.ini` | PlatformIO environments (one per prop + OTA variants) | When adding a new prop |
@@ -75,6 +77,7 @@ Base: `ey/<site>/<room>/prop/<propId>/`
 | Roue de la Fortune | `magie_roueFortune` | 192.168.2.193 | rfid1 (pin 12), magnet1 (pin 27) | maglock1 (pin 25) |
 | Test Magnet | `magie_test_magnet` | 192.168.2.102 | magnet1 (pin 12) | None |
 | Shaker | `hollywood_shaker` | 192.168.2.194 | shake (ESP-NOW from ESP32-C3+MPU6050) | maglock1 (pin 25) |
+| Gadgets Pinpad | `hollywood_gadgets_pinpad` | 192.168.2.195 | Wiegand D0 (pin 26), D1 (pin 27) | None |
 
 Full topic example: `ey/ey1/hollywood/prop/magie_roueFortune/status`
 
@@ -98,6 +101,7 @@ Full topic example: `ey/ey1/hollywood/prop/magie_roueFortune/status`
 pio run -e magie_roueFortune
 pio run -e magie_test_magnet
 pio run -e hollywood_shaker
+pio run -e hollywood_gadgets_pinpad
 ```
 
 ### Flash via USB
@@ -189,7 +193,25 @@ First custom module extending the base firmware with prop-specific logic.
 
 **Pattern for future custom modules**: Define a feature guard (`#define HAS_XXX`) in the prop config, wrap the `.cpp` in `#ifdef`, add `#ifdef` blocks in `main.cpp` for init/tick/reset, and optionally in `EY_Mqtt.cpp` for extra status fields.
 
+### Wiegand Keypad Reader (`EY_Wiegand.h` / `EY_Wiegand.cpp`)
+
+Reads Wiegand keypads via interrupt-driven D0/D1 capture. Used by the Gadgets Pinpad prop.
+
+- **Feature guard**: `#define HAS_WIEGAND` in prop config
+- **Auto-detect**: Supports 4-bit (key-by-key), 8-bit (key + complement), and 26-bit (full Wiegand) frames
+- **4-bit mode**: Accumulates digits in a buffer; `*` clears, `#` submits
+- **26-bit mode**: Extracts 16-bit card number and publishes directly
+- **MQTT events**: `keypress` (each digit), `code_clear` (`*` pressed), `code_entered` (with `"code"` field in payload)
+- **No solve logic**: This prop never becomes "solved" — it's a dumb reader. The Pi-side puzzle logic validates codes.
+- **Wiring**: D0 (green) → GPIO 26, D1 (white) → GPIO 27, 12V power + shared GND
+
 ## Recent Changes
+
+### v1.6.0 — Wiegand Pinpad Module
+- **EY_Wiegand module**: New custom module for Wiegand keypad reading (`EY_Wiegand.h`, `EY_Wiegand.cpp`)
+- **Gadgets Pinpad prop**: `hollywood_gadgets_pinpad` config, static IP 192.168.2.195, no sensors/outputs
+- **EY_PublishEventWithData()**: New generic MQTT helper for events with extra key/value pairs (e.g. `"code": "4527"`)
+- **Feature guard pattern**: `#define HAS_WIEGAND` — second custom module following the shaker pattern
 
 ### v1.5.0 — Shaker Module & Feature Guards
 - **EY_Shaker module**: New custom module for shake detection (`EY_Shaker.h`, `EY_Shaker.cpp`)
