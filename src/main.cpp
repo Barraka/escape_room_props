@@ -10,6 +10,10 @@
 #include "EY_Shaker.h"
 #endif
 
+#ifdef HAS_WIEGAND
+#include "EY_Wiegand.h"
+#endif
+
 // =====================
 // Prop State
 // =====================
@@ -87,6 +91,10 @@ static void handleReset() {
   EY_Shaker_Reset();
 #endif
 
+#ifdef HAS_WIEGAND
+  EY_Wiegand_Reset();
+#endif
+
   ignoringSensors = true;
   ignoreSensorsStart = millis();
 
@@ -140,6 +148,10 @@ void setup() {
 #ifdef HAS_SHAKER
   // Initialize shaker module (uses receiver pin from first sensor)
   EY_Shaker_Begin(SENSORS[0].pin);
+#endif
+
+#ifdef HAS_WIEGAND
+  EY_Wiegand_Begin(WIEGAND_D0_PIN, WIEGAND_D1_PIN);
 #endif
 
   // Start networking (non-blocking)
@@ -243,7 +255,10 @@ void loop() {
   if (!ignoringSensors || millis() - ignoreSensorsStart >= IGNORE_SENSORS_MS) {
     ignoringSensors = false;
 
-#ifdef HAS_SHAKER
+#ifdef HAS_WIEGAND
+    // Wiegand: just tick the reader — no solve logic (Pi handles puzzle state)
+    EY_Wiegand_Tick();
+#elif defined(HAS_SHAKER)
     // Shaker: custom solve logic replaces generic EY_Sensors_Tick()
     bool shakerSolved = EY_Shaker_Tick();
 

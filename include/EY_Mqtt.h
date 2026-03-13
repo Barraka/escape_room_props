@@ -43,4 +43,5 @@ void EY_PublishSolved(bool solved);
 
 // New publishing helpers (v2 contract)
 void EY_PublishEvent(const char* action, const char* source);
+void EY_PublishEventWithData(const char* action, const char* source, const char* dataKey, const char* dataValue);
 void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideActive);

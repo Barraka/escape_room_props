@@ -299,6 +299,38 @@ void EY_PublishEvent(const char* action, const char* source) {
   Serial.println(")");
 }
 
+void EY_PublishEventWithData(const char* action, const char* source, const char* dataKey, const char* dataValue) {
+  if (!s_mqtt.connected()) return;
+  if (!action) return;
+
+  StaticJsonDocument<256> doc;
+  doc[EY_MQTT::F_TYPE] = EY_MQTT::TYPE_EVENT;
+  doc[EY_MQTT::F_PROP_ID] = DEVICE_ID;
+  doc[EY_MQTT::F_ACTION] = action;
+  doc[EY_MQTT::F_SOURCE] = source ? source : EY_MQTT::SRC_DEVICE;
+  doc[EY_MQTT::F_TIMESTAMP] = getTimestamp();
+
+  if (dataKey && dataValue) {
+    doc[dataKey] = dataValue;
+  }
+
+  String topic = buildEventTopic();
+  publishJson(topic, doc);
+
+  Serial.print("Event: ");
+  Serial.print(action);
+  if (dataKey) {
+    Serial.print(" [");
+    Serial.print(dataKey);
+    Serial.print("=");
+    Serial.print(dataValue);
+    Serial.print("]");
+  }
+  Serial.print(" (");
+  Serial.print(source ? source : "device");
+  Serial.println(")");
+}
+
 void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideActive) {
   if (!s_mqtt.connected()) return;
 
