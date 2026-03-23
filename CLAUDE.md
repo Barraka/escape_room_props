@@ -203,7 +203,13 @@ Reads Wiegand keypads via interrupt-driven D0/D1 capture. Used by the Gadgets Pi
 - **26-bit mode**: Extracts 16-bit card number and publishes directly
 - **MQTT events**: `keypress` (each digit), `code_clear` (`*` pressed), `code_entered` (with `"code"` field in payload)
 - **No solve logic**: This prop never becomes "solved" — it's a dumb reader. The Pi-side puzzle logic validates codes.
-- **Wiring**: D0 (green) → GPIO 26, D1 (white) → GPIO 27, 12V power + shared GND
+- **Wiring**:
+  - D0 (green) → ESP32 GPIO 26
+  - D1 (white) → ESP32 GPIO 27
+  - +12V (red) + GND (black) → 12V power supply for keypad
+  - **CRITICAL: shared GND** — keypad GND (black) must also connect to ESP32 GND. Without this, D0/D1 voltage levels float relative to the ESP32 and reads are unreliable. During USB-connected testing a common ground may exist through the laptop, masking the issue.
+  - Unused wires: pink×2 (bell), yellow (open), blue (NO), purple (COM), orange (NC)
+- **Hardware**: Metal Wiegand access control keypad with RFID, 9-wire cable. ESP32 powered separately via USB-C (NOT from the 12V supply)
 
 ## Recent Changes
 

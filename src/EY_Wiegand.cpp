@@ -1,8 +1,9 @@
+#include "EY_Config.h"  // Must be first — brings in PROP_CONFIG which may define HAS_WIEGAND
+
 #ifdef HAS_WIEGAND
 
 #include "EY_Wiegand.h"
 #include "EY_Mqtt.h"
-#include "EY_Config.h"
 
 // Frame is complete after this many ms of silence on D0/D1.
 // Wiegand bits arrive <1ms apart; 50ms is very conservative.
