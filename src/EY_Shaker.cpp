@@ -46,7 +46,8 @@ static unsigned long s_lastReportMs = 0;
 static bool     s_espNowReady = false;
 
 // How long after last packet to still count as "shaking"
-static constexpr unsigned long SHAKE_TIMEOUT_MS = 500;
+// ESP-NOW is lossy — packets arrive in bursts with gaps up to ~1s
+static constexpr unsigned long SHAKE_TIMEOUT_MS = 1500;
 
 void EY_Shaker_Begin(uint8_t rxPin) {
   (void)rxPin; // No longer used — ESP-NOW is wireless

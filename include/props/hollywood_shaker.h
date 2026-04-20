@@ -45,10 +45,11 @@ static const int LED_MIRROR_SENSOR = -1;  // No direct mirror — LED controlled
 #define HAS_SHAKER
 
 // Total accumulated shake time needed to solve (ms)
-static constexpr unsigned long SHAKE_TARGET_MS = 4000;
+static constexpr unsigned long SHAKE_TARGET_MS = 10000;
 
 // How fast accumulated credit decays when not shaking (ms lost per second)
-static constexpr float SHAKE_DECAY_PER_SEC = 500.0f;
+// 5000ms/s = full 10s of progress drains in 2 seconds of no shaking
+static constexpr float SHAKE_DECAY_PER_SEC = 5000.0f;
 
 // How often to publish shake progress via MQTT (ms)
 static constexpr unsigned long SHAKE_REPORT_INTERVAL_MS = 500;
