@@ -104,17 +104,21 @@ pio run -e hollywood_shaker
 pio run -e hollywood_gadgets_pinpad
 ```
 
-### Flash via USB
-```bash
-pio run -e magie_roueFortune --target upload
-```
+### Flashing
 
-### Flash via OTA (WiFi)
+**ALWAYS use OTA (WiFi) flashing.** Never flash via USB — props may have servos or other high-current peripherals connected, and USB power from a laptop cannot handle the draw. This has caused laptop crashes (EC chip overcurrent, requiring battery disconnect to recover).
+
 ```bash
+# Standard OTA flash (always use the -ota environment):
 pio run -e magie_roueFortune-ota --target upload
-# Or override IP:
+
+# Override IP if needed:
 pio run -e magie_roueFortune-ota --target upload --upload-port 192.168.2.193
 ```
+
+The laptop must be on the Hollywood WiFi network (192.168.2.x) to reach the ESP32. The ESP32 must already be running firmware with OTA enabled (all current props do).
+
+> **First-time flash exception**: A brand-new ESP32 with no firmware must be flashed via USB once. In that case, **disconnect all peripherals** (servos, motors, maglocks) from the ESP32 first — only the bare ESP32 board should be connected to the laptop.
 
 ### Monitor Serial Output
 ```bash
@@ -155,8 +159,8 @@ sudo systemctl status mosquitto
    upload_flags =
      --auth=escapeyourself
    ```
-3. Flash to ESP32 via USB: `pio run -e hollywood_newProp --target upload`
-4. Subsequent updates can use OTA: `pio run -e hollywood_newProp-ota --target upload`
+3. First flash via USB (bare ESP32 only, **no peripherals connected**): `pio run -e hollywood_newProp --target upload`
+4. All subsequent flashes via OTA: `pio run -e hollywood_newProp-ota --target upload`
 
 ### Sensor Polarity Quick Reference
 
@@ -181,15 +185,15 @@ sudo systemctl status mosquitto
 First custom module extending the base firmware with prop-specific logic.
 
 - **Feature guard**: `#define HAS_SHAKER` in prop config — enables conditional compilation in `main.cpp`, `EY_Mqtt.cpp`, and `EY_Shaker.cpp`
-- **Hardware (planned)**: ESP32-C3 SuperMini + MPU6050 accelerometer inside the shaker, communicating via **ESP-NOW** (2.4GHz peer-to-peer) to the main ESP32. No extra receiver hardware needed — ESP32 has built-in 2.4GHz radio.
-  - Previous 433MHz approach (RXB6 receiver) abandoned — AGC noise indistinguishable from real signals
-  - Plan A (in progress): QIACHIP 433MHz learning receiver as simpler alternative (ordered, awaiting delivery)
-  - Plan C (fallback): ESP32-C3 + MPU6050 + ESP-NOW + LiPo battery inside shaker
-- **Algorithm**: Accumulates shake time, decays when idle, solves at configurable target
+- **Hardware**: ESP32-C3 SuperMini + MPU6050 accelerometer + 3000mAh LiPo + TP4056 charger inside the shaker, communicating via **ESP-NOW broadcast** (2.4GHz) to the main ESP32. No extra receiver hardware needed.
+  - Previous approaches abandoned: 433MHz RXB6 (AGC noise), QIACHIP learning receiver + vibration switches (switches don't sustain contact during shaking)
+- **Transmitter firmware**: Separate PlatformIO project at `shaker-transmitter/` (board: `lolin_c3_mini`). Reads MPU6050 every 20ms, sends ESP-NOW broadcast when magnitude > 1.3g
+- **Receiver**: ESP-NOW receive callback in `EY_Shaker.cpp`. Deferred init after WiFi connects. Packet = 5 bytes (magic `0x5A` + float magnitude). Timeout 500ms.
+- **Algorithm**: Accumulates shake time, decays when idle (500ms/s), solves at configurable target (4000ms)
 - **MQTT**: Publishes `shakeProgress` (0-100) in `details` of status messages
 - **LED**: Blinks proportionally to progress (faster = closer to solved), solid when solved
 - **Tuning**: `SHAKE_TARGET_MS`, `SHAKE_DECAY_PER_SEC`, `SHAKE_REPORT_INTERVAL_MS` in prop config
-- **Code status**: `EY_Shaker.cpp` currently has pulse-width filtered edge counting (diagnostic mode, threshold=9999). Will be rewritten for either digitalRead (Plan A) or ESP-NOW receive callback (Plan C) once hardware arrives.
+- **Status**: ✅ Fully tested and working (2026-04-10). ~4 seconds of continuous shaking to solve.
 
 **Pattern for future custom modules**: Define a feature guard (`#define HAS_XXX`) in the prop config, wrap the `.cpp` in `#ifdef`, add `#ifdef` blocks in `main.cpp` for init/tick/reset, and optionally in `EY_Mqtt.cpp` for extra status fields.
 

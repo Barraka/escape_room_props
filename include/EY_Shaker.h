@@ -5,13 +5,14 @@
 // ============================================================
 // Shaker Module API
 // ============================================================
-// Reads a 433MHz receiver DATA pin to detect shaking.
-// Accumulates active time, decays when idle, solves at target.
+// Receives ESP-NOW packets from an ESP32-C3 + MPU6050 transmitter
+// inside the shaker. Accumulates active time, decays when idle,
+// solves at target.
 
 // Initialize the shaker module (call once in setup)
 void EY_Shaker_Begin(uint8_t rxPin);
 
-// Poll the receiver pin, accumulate/decay shake time.
+// Poll edge counts, accumulate/decay shake time.
 // Returns true when accumulated time reaches SHAKE_TARGET_MS (solved).
 // Call every loop iteration (non-blocking).
 bool EY_Shaker_Tick();

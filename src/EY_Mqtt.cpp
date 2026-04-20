@@ -7,6 +7,10 @@
 #include "EY_Shaker.h"
 #endif
 
+#ifdef HAS_SIMON
+#include "EY_Simon.h"
+#endif
+
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
@@ -124,7 +128,7 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   // Execute actions
   if (isReset && s_onReset) {
-    Serial.println("CMD: reset");
+    Serial.println("[DEBUG] Reset triggered by MQTT command");
     s_onReset();
   }
 
@@ -360,6 +364,11 @@ void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideAc
 #ifdef HAS_SHAKER
   // Add shake progress (0-100) for GM visibility
   details["shakeProgress"] = EY_Shaker_GetProgress();
+#endif
+
+#ifdef HAS_SIMON
+  details["simonProgress"] = EY_Simon_GetProgress();
+  details["simonLocked"] = EY_Simon_GetLockedCount();
 #endif
 
   // Add output-level details

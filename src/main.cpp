@@ -14,6 +14,23 @@
 #include "EY_Wiegand.h"
 #endif
 
+#ifdef HAS_SIMON
+#include "EY_Simon.h"
+#endif
+
+#ifdef HAS_SERVO
+static void servoSetAngle(int angle) {
+  // DS3225: 500µs (0°) to 2500µs (180°)
+  // At 50Hz (20ms period), 16-bit resolution (65536 steps)
+  int dutyMin = (500 * 65536) / 20000;   // ~1638
+  int dutyMax = (2500 * 65536) / 20000;  // ~8192
+  int duty = map(angle, 0, 180, dutyMin, dutyMax);
+  ledcWrite(0, duty);  // channel 0
+  Serial.print("[Servo] Angle: ");
+  Serial.println(angle);
+}
+#endif
+
 // =====================
 // Prop State
 // =====================
@@ -31,6 +48,10 @@ static bool ignoringSensors = false;
 static unsigned long lastBlink = 0;
 static bool ledState = false;
 
+// LED flash on sensor trigger (testing)
+static unsigned long ledFlashStart = 0;
+static bool ledFlashing = false;
+
 // Reset feedback
 static unsigned long resetFeedbackStart = 0;
 static bool resetFeedbackActive = false;
@@ -45,6 +66,12 @@ static bool otaStarted = false;
 // BOOT button press tracking
 static unsigned long resetBtnPressedAt = 0;
 static bool resetBtnWasPressed = false;
+
+#ifdef HAS_MANUAL_RESET
+// Manual reset button (long-press)
+static unsigned long manualResetPressedAt = 0;
+static bool manualResetWasPressed = false;
+#endif
 
 // =====================
 // Callbacks
@@ -66,6 +93,14 @@ static void onSetSolved(bool value, const char* source) {
   // Unlock outputs (maglocks) on force solve
   EY_Outputs_Release();
 
+#ifdef HAS_SIMON
+  EY_Simon_ForceSolve();
+#endif
+
+#ifdef HAS_SERVO
+  servoSetAngle(SERVO_ANGLE_OPEN);
+#endif
+
   EY_PublishEvent("force_solved", lastChangeSource);
   EY_PublishStatus(true, lastChangeSource, overrideActive);
 }
@@ -79,6 +114,13 @@ static void setLed(bool on) {
 }
 
 static void handleReset() {
+#ifdef HAS_SIMON
+  // Simon auto-manages its state — ignore external resets to avoid reset storms
+  // The game restarts on boot and after solve. GM can force-solve if needed.
+  Serial.println("[Main] Reset ignored (Simon auto-manages)");
+  return;
+#endif
+
   solvedLatched = false;
   lastChangeSource = EY_MQTT::SRC_DEVICE;
   overrideActive = false;
@@ -93,6 +135,14 @@ static void handleReset() {
 
 #ifdef HAS_WIEGAND
   EY_Wiegand_Reset();
+#endif
+
+#ifdef HAS_SIMON
+  EY_Simon_Reset();
+#endif
+
+#ifdef HAS_SERVO
+  servoSetAngle(SERVO_ANGLE_CLOSED);
 #endif
 
   ignoringSensors = true;
@@ -113,6 +163,9 @@ static void handleReset() {
 
 static void handleArm() {
   EY_Outputs_Arm();
+#ifdef HAS_SIMON
+  EY_Simon_Activate();
+#endif
   EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
   Serial.println("[Main] Outputs armed");
 }
@@ -152,6 +205,20 @@ void setup() {
 
 #ifdef HAS_WIEGAND
   EY_Wiegand_Begin(WIEGAND_D0_PIN, WIEGAND_D1_PIN);
+#endif
+
+#ifdef HAS_SIMON
+  EY_Simon_Begin();
+#endif
+
+#ifdef HAS_SERVO
+  ledcSetup(0, 50, 16);          // channel 0, 50Hz, 16-bit resolution
+  ledcAttachPin(SERVO_PIN, 0);   // attach servo pin to channel 0
+  // Startup test: sweep open then back to closed
+  servoSetAngle(SERVO_ANGLE_OPEN);
+  delay(1000);
+  servoSetAngle(SERVO_ANGLE_CLOSED);
+  Serial.println("[Servo] Initialized (startup sweep done)");
 #endif
 
   // Start networking (non-blocking)
@@ -233,9 +300,28 @@ void loop() {
     resetBtnWasPressed = false;
   }
   if (resetBtnWasPressed && (millis() - resetBtnPressedAt >= RESET_HOLD_MS)) {
+    Serial.println("[DEBUG] Reset triggered by BOOT button");
     handleReset();
     resetBtnWasPressed = false;
   }
+
+#ifdef HAS_MANUAL_RESET
+  // ---- Manual reset button (long-press) ----
+  bool manualResetPressed = (digitalRead(MANUAL_RESET_PIN) == LOW);
+
+  if (manualResetPressed && !manualResetWasPressed) {
+    manualResetPressedAt = millis();
+    manualResetWasPressed = true;
+  }
+  if (!manualResetPressed) {
+    manualResetWasPressed = false;
+  }
+  if (manualResetWasPressed && (millis() - manualResetPressedAt >= MANUAL_RESET_HOLD_MS)) {
+    Serial.println("[DEBUG] Reset triggered by manual reset button (3s hold)");
+    handleReset();
+    manualResetWasPressed = false;
+  }
+#endif
 
   // ---- Reset feedback (fast blink) has priority ----
   if (resetFeedbackActive) {
@@ -258,6 +344,46 @@ void loop() {
 #ifdef HAS_WIEGAND
     // Wiegand: just tick the reader — no solve logic (Pi handles puzzle state)
     EY_Wiegand_Tick();
+#elif defined(HAS_SIMON)
+    // Simon: custom game logic with LED blinking and button press detection
+    bool simonSolved = EY_Simon_Tick();
+
+    // Periodically publish status with simonProgress
+    {
+      static unsigned long lastSimonStatus = 0;
+      if (millis() - lastSimonStatus >= SIMON_REPORT_INTERVAL_MS) {
+        lastSimonStatus = millis();
+        EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
+      }
+    }
+
+    // Onboard LED: blink proportional to progress, solid when solved
+    if (!solvedLatched) {
+      uint8_t progress = EY_Simon_GetProgress();
+      if (progress == 0) {
+        setLed(false);
+      } else {
+        unsigned long blinkRate = 1000 - (progress * 9);
+        if (millis() - lastBlink >= blinkRate) {
+          ledState = !ledState;
+          setLed(ledState);
+          lastBlink = millis();
+        }
+      }
+    } else {
+      setLed(true);
+    }
+
+    // Latch solved state
+    if (!solvedLatched && simonSolved) {
+      solvedLatched = true;
+      lastChangeSource = EY_MQTT::SRC_PLAYER;
+
+      EY_Outputs_Release();
+
+      EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
+      Serial.println("[Main] SOLVED by player!");
+    }
 #elif defined(HAS_SHAKER)
     // Shaker: custom solve logic replaces generic EY_Sensors_Tick()
     bool shakerSolved = EY_Shaker_Tick();
@@ -302,7 +428,39 @@ void loop() {
       Serial.println("[Main] SOLVED by player!");
     }
 #else
+    // Track sensor count before tick to detect new triggers
+    static uint8_t prevPresentCount = 0;
+
     bool sensorsSolved = EY_Sensors_Tick();
+
+    // Count currently present sensors
+    uint8_t presentCount = 0;
+    for (uint8_t i = 0; i < SENSOR_COUNT; i++) {
+      const SensorState* st = EY_Sensors_GetState(i);
+      if (st && st->present) presentCount++;
+    }
+
+    // Flash LED for 3s when a new sensor triggers
+    if (presentCount > prevPresentCount) {
+      ledFlashStart = millis();
+      ledFlashing = true;
+      Serial.print("[LED] Flash — ");
+      Serial.print(presentCount);
+      Serial.println(" sensor(s) present");
+    }
+    prevPresentCount = presentCount;
+
+    // LED: flash if active, solid when solved, off otherwise
+    if (ledFlashing && millis() - ledFlashStart < 3000) {
+      if (millis() - lastBlink >= 150) {
+        ledState = !ledState;
+        setLed(ledState);
+        lastBlink = millis();
+      }
+    } else {
+      ledFlashing = false;
+      setLed(solvedLatched);
+    }
 
     // Latch solved state
     if (!solvedLatched && sensorsSolved) {
@@ -311,6 +469,10 @@ void loop() {
 
       // Unlock outputs (maglocks) on player solve
       EY_Outputs_Release();
+
+#ifdef HAS_SERVO
+      servoSetAngle(SERVO_ANGLE_OPEN);
+#endif
 
       EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
       Serial.println("[Main] SOLVED by player!");

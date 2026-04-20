@@ -4,95 +4,119 @@
 
 #include "EY_Shaker.h"
 #include "EY_Mqtt.h"
+#include <esp_now.h>
+#include <WiFi.h>
+
+// ============================================================
+// ESP-NOW shake detection
+// ============================================================
+// An ESP32-C3 + MPU6050 inside the shaker sends ESP-NOW
+// broadcast packets when shaking is detected. This module
+// receives those packets and feeds them into the existing
+// accumulation / decay / solve logic.
+
+// Packet structure (must match transmitter)
+typedef struct __attribute__((packed)) {
+  uint8_t magic;      // 0x5A
+  float   magnitude;  // acceleration in g
+} ShakePacket;
+
+// Set by ESP-NOW callback (runs in WiFi task context)
+static volatile unsigned long s_lastShakeMs = 0;
+static volatile bool s_shakeReceived = false;
+static volatile unsigned long s_packetCount = 0;
+
+static void onEspNowRecv(const uint8_t *mac, const uint8_t *data, int len) {
+  if (len == sizeof(ShakePacket)) {
+    const ShakePacket *pkt = (const ShakePacket *)data;
+    if (pkt->magic == 0x5A) {
+      s_lastShakeMs = millis();
+      s_shakeReceived = true;
+      s_packetCount++;
+    }
+  }
+}
 
 // Runtime state
-static uint8_t  s_rxPin = 0;
-static float    s_accumulatedMs = 0.0f;     // Accumulated shake time (ms)
-static unsigned long s_lastTickMs = 0;      // millis() of last tick
-static bool     s_solved = false;           // Latched solved state
-static bool     s_shaking = false;          // Currently receiving signal
-static bool     s_shakeEventSent = false;   // One-shot "shake_started" event
-static unsigned long s_lastReportMs = 0;    // Last MQTT progress report
+static float    s_accumulatedMs = 0.0f;
+static unsigned long s_lastTickMs = 0;
+static bool     s_solved = false;
+static bool     s_shakeEventSent = false;
+static unsigned long s_lastReportMs = 0;
+static bool     s_espNowReady = false;
 
-// Noise filter: ignore pulses shorter than this
-static constexpr unsigned long PULSE_FILTER_MS = 10;
-static bool     s_lastRaw = false;
-static unsigned long s_lastRawChangeMs = 0;
-static bool     s_filteredState = false;    // Debounced/filtered signal state
+// How long after last packet to still count as "shaking"
+static constexpr unsigned long SHAKE_TIMEOUT_MS = 500;
 
 void EY_Shaker_Begin(uint8_t rxPin) {
-  s_rxPin = rxPin;
-  pinMode(rxPin, INPUT);
+  (void)rxPin; // No longer used — ESP-NOW is wireless
+
   s_accumulatedMs = 0.0f;
   s_lastTickMs = millis();
   s_solved = false;
-  s_shaking = false;
   s_shakeEventSent = false;
   s_lastReportMs = 0;
-  s_lastRaw = false;
-  s_lastRawChangeMs = millis();
-  s_filteredState = false;
+  s_espNowReady = false;
 
-  Serial.println("[Shaker] Initialized on GPIO " + String(rxPin));
-  Serial.println("[Shaker] Target: " + String(SHAKE_TARGET_MS) + "ms, Decay: " + String(SHAKE_DECAY_PER_SEC) + "ms/s");
+  Serial.println("[Shaker] Initialized (ESP-NOW mode, waiting for WiFi)");
+  Serial.printf("[Shaker] Target: %lums, Decay: %.0fms/s\n", SHAKE_TARGET_MS, SHAKE_DECAY_PER_SEC);
 }
 
 bool EY_Shaker_Tick() {
   if (s_solved) return true;
 
+  // Deferred ESP-NOW init — WiFi must be connected first (channel locked)
+  if (!s_espNowReady && WiFi.status() == WL_CONNECTED) {
+    if (esp_now_init() == ESP_OK) {
+      esp_now_register_recv_cb(onEspNowRecv);
+      s_espNowReady = true;
+      Serial.println("[Shaker] ESP-NOW receiver ready");
+      Serial.printf("[Shaker] WiFi channel: %d\n", WiFi.channel());
+    } else {
+      Serial.println("[Shaker] ESP-NOW init failed!");
+    }
+  }
+
   unsigned long now = millis();
   unsigned long deltaMs = now - s_lastTickMs;
   s_lastTickMs = now;
 
-  // Clamp delta to avoid huge jumps (e.g. after OTA or debug pause)
+  // Clamp delta to avoid huge jumps
   if (deltaMs > 500) deltaMs = 500;
 
-  // Read raw GPIO
-  bool rawHigh = (digitalRead(s_rxPin) == HIGH);
-
-  // Noise filter: only accept state change after stable for PULSE_FILTER_MS
-  if (rawHigh != s_lastRaw) {
-    s_lastRaw = rawHigh;
-    s_lastRawChangeMs = now;
-  }
-
-  if (s_lastRaw != s_filteredState && (now - s_lastRawChangeMs >= PULSE_FILTER_MS)) {
-    s_filteredState = s_lastRaw;
-  }
-
-  s_shaking = s_filteredState;
+  // Shaking = received an ESP-NOW packet recently
+  bool shaking = s_shakeReceived && (now - s_lastShakeMs < SHAKE_TIMEOUT_MS);
 
   // Accumulate or decay
-  if (s_shaking) {
+  if (shaking) {
     s_accumulatedMs += (float)deltaMs;
 
-    // Publish one-shot "shake_started" event
     if (!s_shakeEventSent) {
       s_shakeEventSent = true;
       EY_PublishEvent("shake_started", EY_MQTT::SRC_PLAYER);
       Serial.println("[Shaker] Shake started");
     }
   } else {
-    // Decay accumulated time
     float decayMs = SHAKE_DECAY_PER_SEC * ((float)deltaMs / 1000.0f);
     s_accumulatedMs -= decayMs;
+    if (s_accumulatedMs <= 0.0f) {
+      s_accumulatedMs = 0.0f;
+      s_shakeEventSent = false;
+    }
   }
 
   // Clamp
-  if (s_accumulatedMs < 0.0f) s_accumulatedMs = 0.0f;
   if (s_accumulatedMs > (float)SHAKE_TARGET_MS) s_accumulatedMs = (float)SHAKE_TARGET_MS;
 
-  // Periodic progress report via serial
+  // Periodic progress report
   if (now - s_lastReportMs >= SHAKE_REPORT_INTERVAL_MS) {
     s_lastReportMs = now;
     uint8_t progress = EY_Shaker_GetProgress();
-    Serial.print("[Shaker] Progress: ");
-    Serial.print(progress);
-    Serial.print("% (");
-    Serial.print((unsigned long)s_accumulatedMs);
-    Serial.print("/");
-    Serial.print(SHAKE_TARGET_MS);
-    Serial.println("ms)");
+    unsigned long pkts = s_packetCount;
+    s_packetCount = 0;
+    Serial.printf("[Shaker] Progress: %d%% (%lu/%lums) %s [%lu pkts]\n",
+      progress, (unsigned long)s_accumulatedMs, SHAKE_TARGET_MS,
+      shaking ? "SHAKING" : "idle", pkts);
   }
 
   // Check solve
@@ -108,13 +132,11 @@ bool EY_Shaker_Tick() {
 void EY_Shaker_Reset() {
   s_accumulatedMs = 0.0f;
   s_solved = false;
-  s_shaking = false;
   s_shakeEventSent = false;
   s_lastTickMs = millis();
   s_lastReportMs = 0;
-  s_lastRaw = false;
-  s_lastRawChangeMs = millis();
-  s_filteredState = false;
+  s_shakeReceived = false;
+
   Serial.println("[Shaker] Reset");
 }
 
