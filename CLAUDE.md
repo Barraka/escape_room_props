@@ -187,13 +187,14 @@ First custom module extending the base firmware with prop-specific logic.
 - **Feature guard**: `#define HAS_SHAKER` in prop config — enables conditional compilation in `main.cpp`, `EY_Mqtt.cpp`, and `EY_Shaker.cpp`
 - **Hardware**: ESP32-C3 SuperMini + MPU6050 accelerometer + 3000mAh LiPo + TP4056 charger inside the shaker, communicating via **ESP-NOW broadcast** (2.4GHz) to the main ESP32. No extra receiver hardware needed.
   - Previous approaches abandoned: 433MHz RXB6 (AGC noise), QIACHIP learning receiver + vibration switches (switches don't sustain contact during shaking)
-- **Transmitter firmware**: Separate PlatformIO project at `shaker-transmitter/` (board: `lolin_c3_mini`). Reads MPU6050 every 20ms, sends ESP-NOW broadcast when magnitude > 1.3g
-- **Receiver**: ESP-NOW receive callback in `EY_Shaker.cpp`. Deferred init after WiFi connects. Packet = 5 bytes (magic `0x5A` + float magnitude). Timeout 500ms.
-- **Algorithm**: Accumulates shake time, decays when idle (500ms/s), solves at configurable target (4000ms)
+- **Transmitter firmware**: Separate PlatformIO project at `01 - Hollywood Props/Shaker/` (board: `lolin_c3_mini`, build flag: `-DARDUINO_USB_CDC_ON_BOOT=1`). Reads MPU6050 every 20ms, sends ESP-NOW broadcast when magnitude > 1.3g. **Light sleep** after 5s idle (~1-2mA, ~83 days on 3000mAh), wakes on MPU6050 motion interrupt (INT → GPIO7). 60s timer fallback.
+- **Receiver**: ESP-NOW receive callback in `EY_Shaker.cpp`. Deferred init after WiFi connects. Packet = 5 bytes (magic `0x5A` + float magnitude). Timeout 1500ms.
+- **Algorithm**: Accumulates shake time, decays when idle (5000ms/s), solves at configurable target (10000ms)
 - **MQTT**: Publishes `shakeProgress` (0-100) in `details` of status messages
-- **LED**: Blinks proportionally to progress (faster = closer to solved), solid when solved
+- **LED**: Blinks proportionally to progress (faster = closer to solved), solid when solved. Transmitter LED (GPIO8): 1 blink = boot, 3 blinks = motion wake, 2 blinks = timer wake
 - **Tuning**: `SHAKE_TARGET_MS`, `SHAKE_DECAY_PER_SEC`, `SHAKE_REPORT_INTERVAL_MS` in prop config
-- **Status**: ✅ Fully tested and working (2026-04-10). ~4 seconds of continuous shaking to solve.
+- **Wiring reference**: See `01 - Hollywood Props/Shaker/WIRING.pdf`
+- **Status**: ✅ Fully tested and working (2026-04-21). Light sleep enabled. ~10 seconds of continuous shaking to solve.
 
 **Pattern for future custom modules**: Define a feature guard (`#define HAS_XXX`) in the prop config, wrap the `.cpp` in `#ifdef`, add `#ifdef` blocks in `main.cpp` for init/tick/reset, and optionally in `EY_Mqtt.cpp` for extra status fields.
 
