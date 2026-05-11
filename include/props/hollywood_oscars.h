@@ -35,3 +35,32 @@ static constexpr uint8_t OUTPUT_COUNT = sizeof(OUTPUTS) / sizeof(OUTPUTS[0]);
 // LED
 static const bool LED_ACTIVE_LOW = false;
 static const int LED_MIRROR_SENSOR = -1;
+
+// =====================================================
+// Bobine (ceiling film-reel) — 6 MOSFET-switched puck lights
+// =====================================================
+// On solve, lights reveal a 6-digit code one puck at a time,
+// then pauses and loops forever until reset.
+//
+// Wiring: 12V PSU (+) → puck (+), puck (−) → MOSFET drain,
+// MOSFET source → 12V PSU (−) tied to ESP32 GND.
+// ESP32 GPIO → MOSFET gate (via 220Ω), 10kΩ gate-to-GND pulldown.
+#define HAS_BOBINE
+
+static const uint8_t BOBINE_PUCK_PINS[] = { 4, 5, 16, 17, 18, 19 };
+static constexpr uint8_t BOBINE_PUCK_COUNT =
+  sizeof(BOBINE_PUCK_PINS) / sizeof(BOBINE_PUCK_PINS[0]);
+
+// MOSFET: GPIO HIGH turns puck on (true = active-high).
+static constexpr bool BOBINE_ACTIVE_HIGH = true;
+
+// Sequence of puck indices to light, in order. The 6 digits
+// revealed by the sequence form the code. Placeholder below
+// lights pucks in index order — adjust once the code is set.
+static const uint8_t BOBINE_SEQUENCE[] = { 0, 1, 2, 3, 4, 5 };
+static constexpr uint8_t BOBINE_SEQUENCE_LENGTH =
+  sizeof(BOBINE_SEQUENCE) / sizeof(BOBINE_SEQUENCE[0]);
+
+static constexpr uint32_t BOBINE_ON_MS    = 2000;  // per-puck on-time
+static constexpr uint32_t BOBINE_GAP_MS   = 1000;  // gap between pucks
+static constexpr uint32_t BOBINE_PAUSE_MS = 5000;  // pause before repeat

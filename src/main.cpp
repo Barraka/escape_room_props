@@ -18,6 +18,22 @@
 #include "EY_Simon.h"
 #endif
 
+#ifdef HAS_BOBINE
+#include "EY_Bobine.h"
+#endif
+
+#ifdef HAS_IR
+#include "EY_IR.h"
+#endif
+
+#ifdef HAS_RF433
+#include "EY_RF433.h"
+#endif
+
+#ifdef HAS_PIR
+#include "EY_PIR.h"
+#endif
+
 #ifdef HAS_SERVO
 static void servoSetAngle(int angle) {
   // DS3225: 500µs (0°) to 2500µs (180°)
@@ -101,6 +117,14 @@ static void onSetSolved(bool value, const char* source) {
   servoSetAngle(SERVO_ANGLE_OPEN);
 #endif
 
+#ifdef HAS_BOBINE
+  EY_Bobine_Start();
+#endif
+
+#ifdef HAS_RF433
+  EY_RF433_Send(RF_CODE_UP);
+#endif
+
   EY_PublishEvent("force_solved", lastChangeSource);
   EY_PublishStatus(true, lastChangeSource, overrideActive);
 }
@@ -145,6 +169,18 @@ static void handleReset() {
   servoSetAngle(SERVO_ANGLE_CLOSED);
 #endif
 
+#ifdef HAS_BOBINE
+  EY_Bobine_Reset();
+#endif
+
+#ifdef HAS_IR
+  EY_IR_Reset();
+#endif
+
+#ifdef HAS_RF433
+  EY_RF433_Send(RF_CODE_DOWN);
+#endif
+
   ignoringSensors = true;
   ignoreSensorsStart = millis();
 
@@ -175,6 +211,13 @@ static void handleArm() {
 // =====================
 
 void setup() {
+#ifdef HAS_RF433
+  // Pin RF433 DATA low ASAP so FS1000A can't radiate from a floating input
+  // during boot/init. A floating FS1000A jams the nearby IR receiver.
+  pinMode(RF433_TX_PIN, OUTPUT);
+  digitalWrite(RF433_TX_PIN, LOW);
+#endif
+
   Serial.begin(115200);
   delay(800);
   Serial.println("==============================");
@@ -209,6 +252,22 @@ void setup() {
 
 #ifdef HAS_SIMON
   EY_Simon_Begin();
+#endif
+
+#ifdef HAS_BOBINE
+  EY_Bobine_Begin();
+#endif
+
+#ifdef HAS_IR
+  EY_IR_Begin(IR_RECV_PIN);
+#endif
+
+#ifdef HAS_RF433
+  EY_RF433_Begin(RF433_TX_PIN);
+#endif
+
+#ifdef HAS_PIR
+  EY_PIR_Begin(PIR_PIN);
 #endif
 
 #ifdef HAS_SERVO
@@ -270,6 +329,16 @@ void loop() {
 
   // Networking always ticks, but never blocks prop logic
   EY_Net_Tick();
+
+#ifdef HAS_BOBINE
+  // Ceiling bobine sequence — non-blocking; no-op when not running
+  EY_Bobine_Tick();
+#endif
+
+#ifdef HAS_PIR
+  // PIR motion sensor — independent of solve/sensor logic, just publishes events
+  EY_PIR_Tick();
+#endif
 
   // Start OTA once WiFi is connected (deferred from setup)
   if (!otaStarted && WiFi.status() == WL_CONNECTED) {
@@ -344,6 +413,9 @@ void loop() {
 #ifdef HAS_WIEGAND
     // Wiegand: just tick the reader — no solve logic (Pi handles puzzle state)
     EY_Wiegand_Tick();
+#elif defined(HAS_IR)
+    // IR: dumb reader — tick decoder, RC validates the entered code
+    EY_IR_Tick();
 #elif defined(HAS_SIMON)
     // Simon: custom game logic with LED blinking and button press detection
     bool simonSolved = EY_Simon_Tick();
@@ -472,6 +544,10 @@ void loop() {
 
 #ifdef HAS_SERVO
       servoSetAngle(SERVO_ANGLE_OPEN);
+#endif
+
+#ifdef HAS_BOBINE
+      EY_Bobine_Start();
 #endif
 
       EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
