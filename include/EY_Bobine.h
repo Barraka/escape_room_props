@@ -36,3 +36,7 @@ void EY_Bobine_Stop();
 
 // Alias of Stop — called on puzzle reset.
 void EY_Bobine_Reset();
+
+// Stop the sequence and light every puck solid (final "all digits
+// revealed" state shown when the players enter the correct code).
+void EY_Bobine_RevealAll();

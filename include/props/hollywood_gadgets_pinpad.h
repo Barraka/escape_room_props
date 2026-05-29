@@ -43,3 +43,12 @@ static const int LED_MIRROR_SENSOR = -1;
 // Wiegand data pins (D0 = green wire, D1 = white wire)
 static constexpr uint8_t WIEGAND_D0_PIN = 26;
 static constexpr uint8_t WIEGAND_D1_PIN = 27;
+
+// =====================================================
+// Code Sequence configuration (3 codes in order, 1 LED per correct code)
+// =====================================================
+#define HAS_CODE_SEQUENCE
+
+static constexpr uint8_t CODE_SEQUENCE_COUNT = 3;
+static constexpr uint8_t CODE_SEQUENCE_LED_PINS[CODE_SEQUENCE_COUNT] = { 21, 19, 18 };
+static const char* CODE_SEQUENCE_EXPECTED[CODE_SEQUENCE_COUNT] = { "4729", "8153", "3946" };

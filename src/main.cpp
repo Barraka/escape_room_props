@@ -14,6 +14,10 @@
 #include "EY_Wiegand.h"
 #endif
 
+#ifdef HAS_CODE_SEQUENCE
+#include "EY_CodeSequence.h"
+#endif
+
 #ifdef HAS_SIMON
 #include "EY_Simon.h"
 #endif
@@ -113,12 +117,20 @@ static void onSetSolved(bool value, const char* source) {
   EY_Simon_ForceSolve();
 #endif
 
+#ifdef HAS_CODE_SEQUENCE
+  EY_CodeSequence_ForceSolve();
+#endif
+
 #ifdef HAS_SERVO
   servoSetAngle(SERVO_ANGLE_OPEN);
 #endif
 
 #ifdef HAS_BOBINE
-  EY_Bobine_Start();
+  // Bobine has no sensors — force_solved only fires via GM cmd from
+  // the dashboard. Treat it as "reveal everything now" (the bobine's
+  // semantic solved state). The Room Controller drives the looping
+  // light sequence via the separate `start_sequence` MQTT command.
+  EY_Bobine_RevealAll();
 #endif
 
 #ifdef HAS_RF433
@@ -128,6 +140,14 @@ static void onSetSolved(bool value, const char* source) {
   EY_PublishEvent("force_solved", lastChangeSource);
   EY_PublishStatus(true, lastChangeSource, overrideActive);
 }
+
+#ifdef HAS_CODE_SEQUENCE
+static void onCodeSubmitted(const char* code) {
+  CodeSequenceResult result = EY_CodeSequence_Submit(code);
+  const char* resultStr = (result == CodeSequenceResult::WRONG) ? "wrong" : "correct";
+  EY_PublishEventWithData("code_result", EY_MQTT::SRC_PLAYER, "result", resultStr);
+}
+#endif
 
 static void setLed(bool on) {
   if (LED_ACTIVE_LOW) {
@@ -159,6 +179,10 @@ static void handleReset() {
 
 #ifdef HAS_WIEGAND
   EY_Wiegand_Reset();
+#endif
+
+#ifdef HAS_CODE_SEQUENCE
+  EY_CodeSequence_Reset();
 #endif
 
 #ifdef HAS_SIMON
@@ -250,6 +274,11 @@ void setup() {
   EY_Wiegand_Begin(WIEGAND_D0_PIN, WIEGAND_D1_PIN);
 #endif
 
+#ifdef HAS_CODE_SEQUENCE
+  EY_CodeSequence_Begin();
+  EY_Wiegand_OnCode(onCodeSubmitted);
+#endif
+
 #ifdef HAS_SIMON
   EY_Simon_Begin();
 #endif
@@ -310,6 +339,14 @@ void setup() {
 
   // Announce initial state (will only publish if MQTT is already connected)
   EY_PublishStatus(false, lastChangeSource, overrideActive);
+
+#if defined(BOBINE_TEST_MODE) && defined(HAS_BOBINE)
+  // Wiring-bench test: auto-start the looping sequence at boot so the
+  // bobine can be validated without needing the Room Controller online.
+  // Enabled via the `hollywood_bobine-test` / `-test-ota` PlatformIO envs.
+  Serial.println("[TEST MODE] Auto-starting bobine sequence");
+  EY_Bobine_Start();
+#endif
 }
 
 // =====================
@@ -411,8 +448,18 @@ void loop() {
     ignoringSensors = false;
 
 #ifdef HAS_WIEGAND
-    // Wiegand: just tick the reader — no solve logic (Pi handles puzzle state)
+    // Wiegand: just tick the reader. Solve logic lives in code-sequence
+    // module (if present); otherwise Pi handles puzzle state.
     EY_Wiegand_Tick();
+  #ifdef HAS_CODE_SEQUENCE
+    if (!solvedLatched && EY_CodeSequence_IsSolved()) {
+      solvedLatched = true;
+      lastChangeSource = EY_MQTT::SRC_PLAYER;
+      EY_Outputs_Release();
+      EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
+      Serial.println("[Main] SOLVED by player!");
+    }
+  #endif
 #elif defined(HAS_IR)
     // IR: dumb reader — tick decoder, RC validates the entered code
     EY_IR_Tick();
@@ -544,10 +591,6 @@ void loop() {
 
 #ifdef HAS_SERVO
       servoSetAngle(SERVO_ANGLE_OPEN);
-#endif
-
-#ifdef HAS_BOBINE
-      EY_Bobine_Start();
 #endif
 
       EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);

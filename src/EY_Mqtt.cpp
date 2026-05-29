@@ -11,6 +11,10 @@
 #include "EY_Simon.h"
 #endif
 
+#ifdef HAS_BOBINE
+#include "EY_Bobine.h"
+#endif
+
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
@@ -86,6 +90,10 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
   bool isArm = false;
   const char* triggerSensorId = nullptr;
   const char* cmdSource = EY_MQTT::SRC_GM;
+#ifdef HAS_BOBINE
+  bool isBobineStart = false;
+  bool isBobineReveal = false;
+#endif
 
   // Legacy shortcut: plain text "reset"
   if (strcmp(buf, "reset") == 0) {
@@ -113,6 +121,13 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
         } else if (strcmp(command, "set_output") == 0) {
           triggerSensorId = doc["sensorId"];
         }
+#ifdef HAS_BOBINE
+        else if (strcmp(command, "start_sequence") == 0) {
+          isBobineStart = true;
+        } else if (strcmp(command, "reveal_all") == 0) {
+          isBobineReveal = true;
+        }
+#endif
       }
     }
     // Legacy format: type="reset"
@@ -150,6 +165,19 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
     Serial.println(cmdSource);
     EY_Sensors_ForceTrigger(triggerSensorId);
   }
+
+#ifdef HAS_BOBINE
+  if (isBobineStart) {
+    Serial.print("CMD: start_sequence from ");
+    Serial.println(cmdSource);
+    EY_Bobine_Start();
+  }
+  if (isBobineReveal) {
+    Serial.print("CMD: reveal_all from ");
+    Serial.println(cmdSource);
+    EY_Bobine_RevealAll();
+  }
+#endif
 }
 
 static void wifiTick() {

@@ -21,6 +21,9 @@ static volatile unsigned long s_lastBitTime = 0;
 static char    s_codeBuffer[MAX_CODE_LEN + 1];
 static uint8_t s_codeLen = 0;
 
+// ---- Optional code-submitted callback ----
+static WiegandCodeCallback s_codeCb = nullptr;
+
 // ---- ISRs ----
 
 static void IRAM_ATTR isrD0() {
@@ -66,6 +69,7 @@ static void handleKey(uint8_t key) {
 
     if (s_codeLen > 0) {
       EY_PublishEventWithData("code_entered", EY_MQTT::SRC_PLAYER, "code", s_codeBuffer);
+      if (s_codeCb) s_codeCb(s_codeBuffer);
     }
 
     s_codeLen = 0;
@@ -176,6 +180,10 @@ void EY_Wiegand_Reset() {
   s_codeLen = 0;
   s_codeBuffer[0] = '\0';
   Serial.println("[Wiegand] Reset");
+}
+
+void EY_Wiegand_OnCode(WiegandCodeCallback cb) {
+  s_codeCb = cb;
 }
 
 #endif // HAS_WIEGAND

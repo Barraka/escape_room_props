@@ -60,6 +60,15 @@ void EY_Bobine_Reset() {
   EY_Bobine_Stop();
 }
 
+void EY_Bobine_RevealAll() {
+  s_running = false;
+  s_phase = BobinePhase::IDLE;
+  for (uint8_t i = 0; i < BOBINE_PUCK_COUNT; i++) {
+    setPuck(i, true);
+  }
+  Serial.println("[Bobine] All pucks revealed (solid)");
+}
+
 void EY_Bobine_Tick() {
   if (!s_running) return;
 
