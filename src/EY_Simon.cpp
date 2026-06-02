@@ -177,4 +177,75 @@ uint8_t EY_Simon_GetLockedCount() {
   return s_lockedCount;
 }
 
+#ifdef SIMON_TEST_MODE
+// ---- Dev wiring test: all LEDs solid on; press a button → its LED blinks 3x → solid ----
+struct SimonTestBtn {
+  bool lastRead;
+  unsigned long lastChangeMs;
+  bool stablePressed;
+  bool blinking;
+  uint8_t phasesLeft;   // 6 = off,on,off,on,off,on → ends solid on
+  bool ledOn;
+  unsigned long nextToggleAt;
+};
+static SimonTestBtn s_test[SIMON_COUNT];
+static constexpr unsigned long SIMON_TEST_BLINK_MS = 150;
+
+void EY_Simon_TestBegin() {
+  unsigned long now = millis();
+  for (uint8_t i = 0; i < SIMON_COUNT; i++) {
+    s_test[i] = {};
+    s_test[i].ledOn = true;
+    s_test[i].lastChangeMs = now;
+    digitalWrite(SIMON_LED_PINS[i], HIGH);  // solid on
+  }
+  Serial.println("[Simon TEST] All LEDs on. Press a button -> 3 blinks -> back on.");
+}
+
+void EY_Simon_TestTick() {
+  unsigned long now = millis();
+
+  for (uint8_t i = 0; i < SIMON_COUNT; i++) {
+    SimonTestBtn& b = s_test[i];
+
+    // ---- non-blocking blink animation ----
+    if (b.blinking && now >= b.nextToggleAt) {
+      b.phasesLeft--;
+      if (b.phasesLeft == 0) {
+        b.blinking = false;
+        b.ledOn = true;
+        digitalWrite(SIMON_LED_PINS[i], HIGH);  // back to solid on
+      } else {
+        b.ledOn = !b.ledOn;
+        digitalWrite(SIMON_LED_PINS[i], b.ledOn ? HIGH : LOW);
+        b.nextToggleAt = now + SIMON_TEST_BLINK_MS;
+      }
+    }
+
+    // ---- debounced press detection ----
+    bool raw = (digitalRead(SIMON_BTN_PINS[i]) == LOW);
+    if (raw != b.lastRead) {
+      b.lastRead = raw;
+      b.lastChangeMs = now;
+    }
+    if (now - b.lastChangeMs < SIMON_DEBOUNCE_MS) continue;
+
+    bool wasPressed = b.stablePressed;
+    b.stablePressed = b.lastRead;
+
+    // rising edge → start the 3-blink sequence (ignored if already blinking)
+    if (b.stablePressed && !wasPressed && !b.blinking) {
+      b.blinking = true;
+      b.phasesLeft = 6;
+      b.ledOn = false;
+      digitalWrite(SIMON_LED_PINS[i], LOW);
+      b.nextToggleAt = now + SIMON_TEST_BLINK_MS;
+      Serial.print("[Simon TEST] Button ");
+      Serial.print(i + 1);
+      Serial.println(" pressed");
+    }
+  }
+}
+#endif // SIMON_TEST_MODE
+
 #endif // HAS_SIMON

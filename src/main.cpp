@@ -150,11 +150,18 @@ static void onCodeSubmitted(const char* code) {
 #endif
 
 static void setLed(bool on) {
+#ifdef HAS_SIMON
+  // GPIO2 (LED_PIN) doubles as Simon LED #1 — the game owns that pin.
+  // Suppress the onboard status LED so it can't fight the game's blink.
+  (void)on;
+  return;
+#else
   if (LED_ACTIVE_LOW) {
     digitalWrite(LED_PIN, on ? LOW : HIGH);
   } else {
     digitalWrite(LED_PIN, on ? HIGH : LOW);
   }
+#endif
 }
 
 static void handleReset() {
@@ -354,6 +361,21 @@ void setup() {
 // =====================
 
 void loop() {
+#if defined(SIMON_TEST_MODE) && defined(HAS_SIMON)
+  // DEV WIRING TEST: all LEDs solid ON; press a lit button → it blinks 3x → solid.
+  // Networking + OTA stay alive so we can flash back out of test mode.
+  EY_Net_Tick();
+  if (!otaStarted && WiFi.status() == WL_CONNECTED) {
+    ArduinoOTA.begin();
+    otaStarted = true;
+  }
+  if (otaStarted) ArduinoOTA.handle();
+  static bool simonTestInit = false;
+  if (!simonTestInit) { EY_Simon_TestBegin(); simonTestInit = true; }
+  EY_Simon_TestTick();
+  return;
+#endif
+
   // ---- LED mirrors sensor state (direct feedback - first priority) ----
   // This must be first to ensure instant response without network delays
   if (LED_MIRROR_SENSOR >= 0 && LED_MIRROR_SENSOR < SENSOR_COUNT) {
