@@ -11,6 +11,10 @@
 #include "EY_Simon.h"
 #endif
 
+#ifdef HAS_VEHICLES
+#include "EY_Vehicles.h"
+#endif
+
 #ifdef HAS_BOBINE
 #include "EY_Bobine.h"
 #endif
@@ -213,8 +217,21 @@ static void mqttTick() {
   if (WiFi.status() != WL_CONNECTED) return;
   if (s_mqtt.connected()) return;
 
-  if (millis() - s_lastMqttAttempt < 3000) return;
+  if (millis() - s_lastMqttAttempt < 5000) return;
   s_lastMqttAttempt = millis();
+
+  // Fast reachability probe with an explicit short timeout. PubSubClient's
+  // connect() can block the loop for seconds when the broker is offline
+  // (freezing LED timing → blinks fire in unison, and dropping button presses).
+  // Bail out quickly if the broker isn't reachable so the game stays smooth.
+  {
+    WiFiClient probe;
+    if (!probe.connect(MQTT_HOST, MQTT_PORT, 400)) {
+      probe.stop();
+      return;
+    }
+    probe.stop();
+  }
 
   String clientId = String("esp32_") + SITE_ID + "_" + ROOM_ID + "_" + DEVICE_ID;
 
@@ -397,6 +414,11 @@ void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideAc
 #ifdef HAS_SIMON
   details["simonProgress"] = EY_Simon_GetProgress();
   details["simonLocked"] = EY_Simon_GetLockedCount();
+#endif
+
+#ifdef HAS_VEHICLES
+  details["vehiclesProgress"] = EY_Vehicles_GetProgress();
+  details["vehiclesCorrect"] = EY_Vehicles_GetCorrectCount();
 #endif
 
   // Add output-level details
