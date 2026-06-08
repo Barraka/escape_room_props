@@ -22,6 +22,10 @@
 #include "EY_Simon.h"
 #endif
 
+#ifdef HAS_VEHICLES
+#include "EY_Vehicles.h"
+#endif
+
 #ifdef HAS_BOBINE
 #include "EY_Bobine.h"
 #endif
@@ -117,6 +121,10 @@ static void onSetSolved(bool value, const char* source) {
   EY_Simon_ForceSolve();
 #endif
 
+#ifdef HAS_VEHICLES
+  EY_Vehicles_ForceSolve();
+#endif
+
 #ifdef HAS_CODE_SEQUENCE
   EY_CodeSequence_ForceSolve();
 #endif
@@ -196,6 +204,10 @@ static void handleReset() {
   EY_Simon_Reset();
 #endif
 
+#ifdef HAS_VEHICLES
+  EY_Vehicles_Reset();
+#endif
+
 #ifdef HAS_SERVO
   servoSetAngle(SERVO_ANGLE_CLOSED);
 #endif
@@ -232,6 +244,9 @@ static void handleArm() {
   EY_Outputs_Arm();
 #ifdef HAS_SIMON
   EY_Simon_Activate();
+#endif
+#ifdef HAS_VEHICLES
+  EY_Vehicles_Activate();
 #endif
   EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
   Serial.println("[Main] Outputs armed");
@@ -288,6 +303,10 @@ void setup() {
 
 #ifdef HAS_SIMON
   EY_Simon_Begin();
+#endif
+
+#ifdef HAS_VEHICLES
+  EY_Vehicles_Begin();
 #endif
 
 #ifdef HAS_BOBINE
@@ -373,6 +392,21 @@ void loop() {
   static bool simonTestInit = false;
   if (!simonTestInit) { EY_Simon_TestBegin(); simonTestInit = true; }
   EY_Simon_TestTick();
+  return;
+#endif
+
+#if defined(VEHICLES_TEST_MODE) && defined(HAS_VEHICLES)
+  // DEV WIRING TEST: prints each switch's position as you flip it — use to map
+  // switches and discover the in-room combination. Networking + OTA stay alive.
+  EY_Net_Tick();
+  if (!otaStarted && WiFi.status() == WL_CONNECTED) {
+    ArduinoOTA.begin();
+    otaStarted = true;
+  }
+  if (otaStarted) ArduinoOTA.handle();
+  static bool vehiclesTestInit = false;
+  if (!vehiclesTestInit) { EY_Vehicles_TestBegin(); vehiclesTestInit = true; }
+  EY_Vehicles_TestTick();
   return;
 #endif
 
@@ -517,6 +551,47 @@ void loop() {
 
     // Latch solved state
     if (!solvedLatched && simonSolved) {
+      solvedLatched = true;
+      lastChangeSource = EY_MQTT::SRC_PLAYER;
+
+      EY_Outputs_Release();
+
+      EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
+      Serial.println("[Main] SOLVED by player!");
+    }
+#elif defined(HAS_VEHICLES)
+    // Vehicles: custom solve logic — all 6 switches must hold the target combination
+    bool vehiclesSolved = EY_Vehicles_Tick();
+
+    // Periodically publish status with vehiclesProgress
+    {
+      static unsigned long lastVehiclesStatus = 0;
+      if (millis() - lastVehiclesStatus >= VEHICLE_REPORT_INTERVAL_MS) {
+        lastVehiclesStatus = millis();
+        EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
+      }
+    }
+
+    // Onboard LED: blink proportional to progress, solid when solved
+    if (!solvedLatched) {
+      uint8_t progress = EY_Vehicles_GetProgress();
+      if (progress == 0) {
+        setLed(false);
+      } else {
+        unsigned long blinkRate = 1000 - (progress * 9);
+        if (millis() - lastBlink >= blinkRate) {
+          ledState = !ledState;
+          setLed(ledState);
+          lastBlink = millis();
+        }
+      }
+    } else {
+      setLed(true);
+    }
+
+    // Latch solved state. Note: once the combination latches it stays solved
+    // even if a player nudges a switch afterward (until GM reset / re-arm).
+    if (!solvedLatched && vehiclesSolved) {
       solvedLatched = true;
       lastChangeSource = EY_MQTT::SRC_PLAYER;
 
