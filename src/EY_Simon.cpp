@@ -24,6 +24,13 @@ static SimonButton s_btns[SIMON_COUNT];
 static bool s_active = false;
 static uint8_t s_lockedCount = 0;
 
+// Victory animation state. Triggered the moment the last button locks: all LEDs
+// flash off/on three times, ending solid on. phasesLeft counts down from 6:
+// even values = LEDs on, odd values = LEDs off, so the final state at 0 is on.
+static bool s_victoryActive = false;
+static uint8_t s_victoryPhasesLeft = 0;
+static unsigned long s_victoryNextAt = 0;
+
 // ---- Public API ----
 
 void EY_Simon_Begin() {
@@ -63,6 +70,8 @@ void EY_Simon_Begin() {
 void EY_Simon_Activate() {
   s_active = true;
   s_lockedCount = 0;
+  s_victoryActive = false;
+  s_victoryPhasesLeft = 0;
 
   unsigned long now = millis();
   for (uint8_t i = 0; i < SIMON_COUNT; i++) {
@@ -85,6 +94,26 @@ bool EY_Simon_Tick() {
   if (!s_active) return false;
 
   unsigned long now = millis();
+
+  // ---- Victory animation ----
+  // Runs after the last button locks. Drives every LED in lockstep, so we have
+  // to handle it outside the per-button loop (and we skip the loop entirely
+  // while it's playing so a stray late press can't fight the animation).
+  if (s_victoryActive) {
+    if (now >= s_victoryNextAt) {
+      s_victoryPhasesLeft--;
+      bool ledsOn = (s_victoryPhasesLeft % 2 == 0);
+      for (uint8_t i = 0; i < SIMON_COUNT; i++) {
+        digitalWrite(SIMON_LED_PINS[i], ledsOn ? HIGH : LOW);
+      }
+      if (s_victoryPhasesLeft == 0) {
+        s_victoryActive = false;
+      } else {
+        s_victoryNextAt = now + SIMON_VICTORY_BLINK_MS;
+      }
+    }
+    return true;
+  }
 
   for (uint8_t i = 0; i < SIMON_COUNT; i++) {
     SimonButton& btn = s_btns[i];
@@ -133,6 +162,16 @@ bool EY_Simon_Tick() {
         Serial.println(")");
 
         EY_PublishEvent("button_locked", EY_MQTT::SRC_PLAYER);
+
+        // Kick off the win animation once the last button locks. All LEDs are
+        // solid on at this point; the animation immediately drops them off,
+        // then toggles 6 times back up to solid on.
+        if (s_lockedCount >= SIMON_COUNT) {
+          s_victoryActive = true;
+          s_victoryPhasesLeft = 6;
+          s_victoryNextAt = now + SIMON_VICTORY_BLINK_MS;
+          Serial.println("[Simon] Win animation started");
+        }
       }
       // If LED not on: nothing happens
     }
@@ -144,6 +183,8 @@ bool EY_Simon_Tick() {
 void EY_Simon_Reset() {
   s_active = false;
   s_lockedCount = 0;
+  s_victoryActive = false;
+  s_victoryPhasesLeft = 0;
 
   for (uint8_t i = 0; i < SIMON_COUNT; i++) {
     s_btns[i] = {};
@@ -159,6 +200,8 @@ void EY_Simon_Reset() {
 void EY_Simon_ForceSolve() {
   s_active = true;
   s_lockedCount = SIMON_COUNT;
+  s_victoryActive = false;
+  s_victoryPhasesLeft = 0;
 
   for (uint8_t i = 0; i < SIMON_COUNT; i++) {
     s_btns[i].locked = true;

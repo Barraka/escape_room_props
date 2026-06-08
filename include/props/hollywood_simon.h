@@ -31,6 +31,7 @@ static constexpr unsigned long SIMON_BLINK_MAX_MS      = 3000;  // Max interval 
 static constexpr unsigned long SIMON_BLINK_DURATION_MS  = 450;  // LED on duration per blink
 static constexpr unsigned long SIMON_DEBOUNCE_MS        = 50;   // Button debounce
 static constexpr unsigned long SIMON_REPORT_INTERVAL_MS = 1000; // MQTT status report interval
+static constexpr unsigned long SIMON_VICTORY_BLINK_MS   = 200;  // Per-phase toggle in the win animation (3 blinks, ending solid on)
 
 // No standard sensors — Simon module handles button input
 static const SensorDef SENSORS[] = {};
