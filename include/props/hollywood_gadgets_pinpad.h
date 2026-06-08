@@ -51,4 +51,4 @@ static constexpr uint8_t WIEGAND_D1_PIN = 27;
 
 static constexpr uint8_t CODE_SEQUENCE_COUNT = 3;
 static constexpr uint8_t CODE_SEQUENCE_LED_PINS[CODE_SEQUENCE_COUNT] = { 21, 19, 18 };
-static const char* CODE_SEQUENCE_EXPECTED[CODE_SEQUENCE_COUNT] = { "4729", "8153", "3946" };
+static const char* CODE_SEQUENCE_EXPECTED[CODE_SEQUENCE_COUNT] = { "4700", "8100", "3900" };
