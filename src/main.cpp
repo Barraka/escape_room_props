@@ -72,9 +72,17 @@ static bool ignoringSensors = false;
 static unsigned long lastBlink = 0;
 static bool ledState = false;
 
-// LED flash on sensor trigger (testing)
-static unsigned long ledFlashStart = 0;
-static bool ledFlashing = false;
+// Counted-flash state (1 flash per press, 3 flashes on solve)
+static uint8_t       ledFlashesRemaining = 0;
+static bool          ledFlashPhaseOn = false;
+static unsigned long ledFlashPhaseStart = 0;
+static constexpr unsigned long LED_FLASH_PHASE_MS = 120;
+
+static void triggerLedFlashes(uint8_t count) {
+  ledFlashesRemaining = count;
+  ledFlashPhaseOn = true;
+  ledFlashPhaseStart = millis();
+}
 
 // Reset feedback
 static unsigned long resetFeedbackStart = 0;
@@ -656,29 +664,28 @@ void loop() {
       if (st && st->present) presentCount++;
     }
 
-    // Flash LED for 3s when a new sensor triggers
+    // 1 LED flash per new press (wiring/debug feedback)
     if (presentCount > prevPresentCount) {
-      ledFlashStart = millis();
-      ledFlashing = true;
+      triggerLedFlashes(1);
       Serial.print("[LED] Flash — ");
       Serial.print(presentCount);
       Serial.println(" sensor(s) present");
     }
     prevPresentCount = presentCount;
 
-    // LED: flash if active, solid when solved, off otherwise
-    if (ledFlashing && millis() - ledFlashStart < 3000) {
-      if (millis() - lastBlink >= 150) {
-        ledState = !ledState;
-        setLed(ledState);
-        lastBlink = millis();
-      }
-    } else {
-      ledFlashing = false;
-      setLed(solvedLatched);
+    // Republish status on any sensor state change so the GM dashboard sees
+    // both SEQUENCE progress (latched per-step) and decorative button
+    // presses/releases (momentary triggered field) in real time.
+    static uint8_t prevSeqIndex = 0;
+    uint8_t curSeqIndex = EY_Sensors_GetSequenceIndex();
+    bool seqChanged = (curSeqIndex != prevSeqIndex);
+    if ((seqChanged || EY_Sensors_StateChangedThisTick()) && !sensorsSolved) {
+      EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
     }
+    prevSeqIndex = curSeqIndex;
 
-    // Latch solved state
+    // Latch solved state (must run before the LED tick so the 3-flash
+    // burst supersedes any 1-flash queued earlier in the same iteration)
     if (!solvedLatched && sensorsSolved) {
       solvedLatched = true;
       lastChangeSource = EY_MQTT::SRC_PLAYER;
@@ -690,8 +697,32 @@ void loop() {
       servoSetAngle(SERVO_ANGLE_OPEN);
 #endif
 
+      triggerLedFlashes(3);
       EY_PublishStatus(solvedLatched, lastChangeSource, overrideActive);
       Serial.println("[Main] SOLVED by player!");
+    }
+
+    // LED state machine: N counted flashes, otherwise solid = solvedLatched
+    if (ledFlashesRemaining > 0) {
+      unsigned long now = millis();
+      if (ledFlashPhaseOn) {
+        setLed(true);
+        if (now - ledFlashPhaseStart >= LED_FLASH_PHASE_MS) {
+          ledFlashPhaseOn = false;
+          ledFlashPhaseStart = now;
+        }
+      } else {
+        setLed(false);
+        if (now - ledFlashPhaseStart >= LED_FLASH_PHASE_MS) {
+          ledFlashesRemaining--;
+          if (ledFlashesRemaining > 0) {
+            ledFlashPhaseOn = true;
+            ledFlashPhaseStart = now;
+          }
+        }
+      }
+    } else {
+      setLed(solvedLatched);
     }
 #endif
   }

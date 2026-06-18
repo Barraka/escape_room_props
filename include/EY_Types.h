@@ -16,20 +16,26 @@ enum class PresentWhen : uint8_t {
 
 // How do we determine "solved"?
 enum class SolveMode : uint8_t {
-  ANY,   // Solved when ANY sensor becomes present
-  ALL,   // Solved when ALL sensors are present simultaneously
+  ANY,       // Solved when ANY sensor becomes present
+  ALL,       // Solved when ALL sensors are present simultaneously
+  SEQUENCE,  // Sensors must trigger (press transition) in declaration order.
+             // Wrong press resets progress to 0. Releases are ignored.
   // Future extensions:
-  // SEQUENCE,  // Sensors must trigger in defined order
   // CUSTOM,    // Prop-specific logic via callback
 };
 
-// Sensor definition (compile-time configuration)
+// Sensor definition (compile-time configuration).
+// Trailing fields can be omitted in aggregate initializers — they zero-init.
 struct SensorDef {
   const char* id;            // Stable identifier, e.g., "rfid1", "magnet_left"
   uint8_t pin;               // GPIO pin number
   PresentWhen presentWhen;   // Polarity rule
   const char* actionEvent;   // Event action string, e.g., "rfid_present"
   bool needsArming;          // Must see "not present" at least once before "present" counts
+  bool decorative;           // If true: sensor is ignored by ANY/ALL/SEQUENCE solve logic.
+                             // Used for sound-feedback buttons / cosmetic inputs that publish
+                             // events on every press but never advance or reset the puzzle.
+                             // Omit (defaults to false) for normal puzzle sensors.
 };
 
 // Sensor runtime state

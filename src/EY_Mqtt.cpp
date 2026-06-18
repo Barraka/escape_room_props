@@ -276,7 +276,7 @@ void EY_Net_Begin(ResetCallback onReset, SetSolvedCallback onSetSolved, ArmCallb
   s_onArm = onArm;
 
   s_mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  s_mqtt.setBufferSize(768);  // Default 256 is too small for status messages with sensor + output details
+  s_mqtt.setBufferSize(1024);  // Default 256 is too small for status messages with sensor + output details
   s_mqtt.setCallback(mqttCallback);
 
   wifiTick();
@@ -384,7 +384,7 @@ void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideAc
   if (!s_mqtt.connected()) return;
 
   // Larger buffer to accommodate sensor + output details
-  StaticJsonDocument<768> doc;
+  StaticJsonDocument<1024> doc;
   doc[EY_MQTT::F_TYPE] = EY_MQTT::TYPE_STATUS;
   doc[EY_MQTT::F_PROP_ID] = DEVICE_ID;
   doc["name"] = DEVICE_NAME;
@@ -399,11 +399,29 @@ void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideAc
   JsonArray sensors = details.createNestedArray("sensors");
 
   uint8_t sensorCount = EY_Sensors_GetCount();
+  uint8_t seqIndex = EY_Sensors_GetSequenceIndex();  // 0 unless SOLVE_MODE == SEQUENCE
+  bool sequenceMode = (SOLVE_MODE == SolveMode::SEQUENCE);
+
   for (uint8_t i = 0; i < sensorCount; i++) {
     const SensorState* state = EY_Sensors_GetState(i);
     JsonObject sensor = sensors.createNestedObject();
     sensor["sensorId"] = SENSORS[i].id;
-    sensor["triggered"] = state ? state->present : false;
+    // Decoratives always reflect current physical state (momentary feedback).
+    // SEQUENCE non-decoratives: "triggered" = step completed (latched until reset).
+    // ANY/ALL non-decoratives:  "triggered" = currently present.
+    bool triggered;
+    if (SENSORS[i].decorative) {
+      triggered = state ? state->present : false;
+    } else if (sequenceMode) {
+      triggered = (i < seqIndex);
+    } else {
+      triggered = state ? state->present : false;
+    }
+    sensor["triggered"] = triggered;
+  }
+
+  if (sequenceMode) {
+    details["sequenceProgress"] = seqIndex;
   }
 
 #ifdef HAS_SHAKER

@@ -7,6 +7,18 @@
 // ------------------------------------------------------------
 static SensorState s_states[SENSOR_COUNT];
 
+// SEQUENCE mode: index of the next sensor expected to be pressed.
+// Solved when it reaches s_solveSensorCount (excludes decoratives).
+static uint8_t s_sequenceIndex = 0;
+
+// Count of non-decorative sensors (= solve target for SEQUENCE/ALL).
+// Computed once in EY_Sensors_Begin.
+static uint8_t s_solveSensorCount = 0;
+
+// True if EY_Sensors_Tick observed any sensor present-state change this tick
+// (press or release). Used by main.cpp to republish status on demand.
+static bool s_anyStateChangeThisTick = false;
+
 // ------------------------------------------------------------
 // Internal helpers
 // ------------------------------------------------------------
@@ -16,19 +28,42 @@ static bool readPresent(const SensorDef& def) {
   return (def.presentWhen == PresentWhen::HIGH_LEVEL) ? (val == HIGH) : (val == LOW);
 }
 
+static void handleSequencePress(uint8_t i) {
+  if (i == s_sequenceIndex) {
+    s_sequenceIndex++;
+    EY_PublishEvent(SENSORS[i].actionEvent, EY_MQTT::SRC_PLAYER);
+    Serial.print("[Sequence] OK ");
+    Serial.print(s_sequenceIndex);
+    Serial.print("/");
+    Serial.println(s_solveSensorCount);
+  } else {
+    Serial.print("[Sequence] Wrong press (expected idx ");
+    Serial.print(s_sequenceIndex);
+    Serial.print(", got ");
+    Serial.print(i);
+    Serial.println(") — sequence reset");
+    s_sequenceIndex = 0;
+  }
+}
+
 static bool evaluateSolveCondition() {
   switch (SOLVE_MODE) {
     case SolveMode::ANY:
       for (uint8_t i = 0; i < SENSOR_COUNT; i++) {
+        if (SENSORS[i].decorative) continue;
         if (s_states[i].present) return true;
       }
       return false;
 
     case SolveMode::ALL:
       for (uint8_t i = 0; i < SENSOR_COUNT; i++) {
+        if (SENSORS[i].decorative) continue;
         if (!s_states[i].present) return false;
       }
-      return (SENSOR_COUNT > 0);  // true only if all present (and at least one sensor exists)
+      return (s_solveSensorCount > 0);
+
+    case SolveMode::SEQUENCE:
+      return (s_solveSensorCount > 0) && (s_sequenceIndex >= s_solveSensorCount);
 
     default:
       return false;
@@ -40,6 +75,7 @@ static bool evaluateSolveCondition() {
 // ------------------------------------------------------------
 
 void EY_Sensors_Begin() {
+  s_solveSensorCount = 0;
   for (uint8_t i = 0; i < SENSOR_COUNT; i++) {
     pinMode(SENSORS[i].pin, INPUT_PULLUP);
 
@@ -50,11 +86,14 @@ void EY_Sensors_Begin() {
     s_states[i].forceLocked = false;
     s_states[i].lastRaw = readPresent(SENSORS[i]);
     s_states[i].lastChangeMs = millis();
+
+    if (!SENSORS[i].decorative) s_solveSensorCount++;
   }
 }
 
 bool EY_Sensors_Tick() {
   bool anyTransition = false;
+  s_anyStateChangeThisTick = false;
 
   for (uint8_t i = 0; i < SENSOR_COUNT; i++) {
     const SensorDef& def = SENSORS[i];
@@ -90,19 +129,26 @@ bool EY_Sensors_Tick() {
     // Detect transition to present
     if (state.present && !wasPresent) {
       anyTransition = true;
+      s_anyStateChangeThisTick = true;
       Serial.print("[Sensor] ");
       Serial.print(def.id);
       Serial.println(" -> PRESENT");
 
-      // Publish one-shot event (once per reset)
-      if (!state.eventSent) {
+      if (def.decorative) {
+        // Decorative: publish on every press, never affects solve logic
+        EY_PublishEvent(def.actionEvent, EY_MQTT::SRC_PLAYER);
+      } else if (SOLVE_MODE == SolveMode::SEQUENCE) {
+        handleSequencePress(i);
+      } else if (!state.eventSent) {
+        // ANY/ALL: publish one-shot event (once per reset)
         EY_PublishEvent(def.actionEvent, EY_MQTT::SRC_PLAYER);
         state.eventSent = true;
       }
     }
 
-    // Detect transition to not present (for debugging)
+    // Detect transition to not present
     if (!state.present && wasPresent) {
+      s_anyStateChangeThisTick = true;
       Serial.print("[Sensor] ");
       Serial.print(def.id);
       Serial.println(" -> ABSENT");
@@ -121,6 +167,7 @@ void EY_Sensors_Reset() {
     s_states[i].lastRaw = readPresent(SENSORS[i]);
     s_states[i].lastChangeMs = millis();
   }
+  s_sequenceIndex = 0;
   Serial.println("[Sensor] All sensors reset");
 }
 
@@ -135,6 +182,14 @@ const SensorState* EY_Sensors_GetState(uint8_t index) {
 
 uint8_t EY_Sensors_GetCount() {
   return SENSOR_COUNT;
+}
+
+uint8_t EY_Sensors_GetSequenceIndex() {
+  return (SOLVE_MODE == SolveMode::SEQUENCE) ? s_sequenceIndex : 0;
+}
+
+bool EY_Sensors_StateChangedThisTick() {
+  return s_anyStateChangeThisTick;
 }
 
 bool EY_Sensors_ForceTrigger(const char* sensorId) {
@@ -152,6 +207,12 @@ bool EY_Sensors_ForceTrigger(const char* sensorId) {
       Serial.print("[Sensor] ");
       Serial.print(sensorId);
       Serial.println(" -> FORCE TRIGGERED (GM)");
+
+      // In SEQUENCE mode, GM force-trigger advances progress by one step.
+      // Force-triggering every sensor reaches SENSOR_COUNT -> solved.
+      if (SOLVE_MODE == SolveMode::SEQUENCE && s_sequenceIndex < SENSOR_COUNT) {
+        s_sequenceIndex++;
+      }
 
       // Publish event if not already sent
       if (!state.eventSent) {
