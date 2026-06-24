@@ -28,6 +28,12 @@ static bool readPresent(const SensorDef& def) {
   return (def.presentWhen == PresentWhen::HIGH_LEVEL) ? (val == HIGH) : (val == LOW);
 }
 
+// Effective presence for solve/status purposes. Latching sensors (momentary-pulse
+// readers) report their latched state; everything else reports live presence.
+static bool effectivePresent(uint8_t i) {
+  return SENSORS[i].latching ? s_states[i].latched : s_states[i].present;
+}
+
 static void handleSequencePress(uint8_t i) {
   if (i == s_sequenceIndex) {
     s_sequenceIndex++;
@@ -51,14 +57,14 @@ static bool evaluateSolveCondition() {
     case SolveMode::ANY:
       for (uint8_t i = 0; i < SENSOR_COUNT; i++) {
         if (SENSORS[i].decorative) continue;
-        if (s_states[i].present) return true;
+        if (effectivePresent(i)) return true;
       }
       return false;
 
     case SolveMode::ALL:
       for (uint8_t i = 0; i < SENSOR_COUNT; i++) {
         if (SENSORS[i].decorative) continue;
-        if (!s_states[i].present) return false;
+        if (!effectivePresent(i)) return false;
       }
       return (s_solveSensorCount > 0);
 
@@ -82,6 +88,7 @@ void EY_Sensors_Begin() {
     // Initialize state
     s_states[i].armed = !SENSORS[i].needsArming;  // Pre-armed if arming not required
     s_states[i].present = false;
+    s_states[i].latched = false;
     s_states[i].eventSent = false;
     s_states[i].forceLocked = false;
     s_states[i].lastRaw = readPresent(SENSORS[i]);
@@ -130,6 +137,7 @@ bool EY_Sensors_Tick() {
     if (state.present && !wasPresent) {
       anyTransition = true;
       s_anyStateChangeThisTick = true;
+      if (def.latching) state.latched = true;  // momentary readers: latch until reset
       Serial.print("[Sensor] ");
       Serial.print(def.id);
       Serial.println(" -> PRESENT");
@@ -162,6 +170,7 @@ void EY_Sensors_Reset() {
   for (uint8_t i = 0; i < SENSOR_COUNT; i++) {
     s_states[i].armed = !SENSORS[i].needsArming;
     s_states[i].present = false;
+    s_states[i].latched = false;
     s_states[i].eventSent = false;
     s_states[i].forceLocked = false;
     s_states[i].lastRaw = readPresent(SENSORS[i]);
@@ -202,6 +211,7 @@ bool EY_Sensors_ForceTrigger(const char* sensorId) {
       // Force the sensor to triggered state (locked until reset)
       state.armed = true;
       state.present = true;
+      state.latched = true;
       state.forceLocked = true;
 
       Serial.print("[Sensor] ");

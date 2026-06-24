@@ -16,11 +16,13 @@ static const IPAddress STATIC_IP(192, 168, 2, 204);
 
 // Sensors — 7 reed switches wired between pin and GND
 // INPUT_PULLUP: pin reads HIGH when no magnet, LOW when magnet present
+// NOTE: magnet3 moved from GPIO17 (not broken out / PSRAM on this board) to GPIO4,
+//       a normal pull-up-capable pin (no external resistor needed).
 static const SensorDef SENSORS[] = {
   //  id          pin  presentWhen              actionEvent        needsArming
   { "magnet1",    13,  PresentWhen::LOW_LEVEL,  "magnet_present",  true },
   { "magnet2",    14,  PresentWhen::LOW_LEVEL,  "magnet_present",  true },
-  { "magnet3",    17,  PresentWhen::LOW_LEVEL,  "magnet_present",  true },
+  { "magnet3",     4,  PresentWhen::LOW_LEVEL,  "magnet_present",  true },
   { "magnet4",    26,  PresentWhen::LOW_LEVEL,  "magnet_present",  true },
   { "magnet5",    27,  PresentWhen::LOW_LEVEL,  "magnet_present",  true },
   { "magnet6",    32,  PresentWhen::LOW_LEVEL,  "magnet_present",  true },

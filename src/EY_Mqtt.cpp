@@ -408,12 +408,15 @@ void EY_PublishStatus(bool solved, const char* lastChangeSource, bool overrideAc
     sensor["sensorId"] = SENSORS[i].id;
     // Decoratives always reflect current physical state (momentary feedback).
     // SEQUENCE non-decoratives: "triggered" = step completed (latched until reset).
-    // ANY/ALL non-decoratives:  "triggered" = currently present.
+    // ANY/ALL non-decoratives:  "triggered" = currently present, or latched state
+    //   for latching sensors (momentary-pulse readers that don't hold the line).
     bool triggered;
     if (SENSORS[i].decorative) {
       triggered = state ? state->present : false;
     } else if (sequenceMode) {
       triggered = (i < seqIndex);
+    } else if (SENSORS[i].latching) {
+      triggered = state ? state->latched : false;
     } else {
       triggered = state ? state->present : false;
     }

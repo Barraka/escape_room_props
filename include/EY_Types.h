@@ -36,12 +36,18 @@ struct SensorDef {
                              // Used for sound-feedback buttons / cosmetic inputs that publish
                              // events on every press but never advance or reset the puzzle.
                              // Omit (defaults to false) for normal puzzle sensors.
+  bool latching;             // If true: once the sensor reads "present" it stays latched until
+                             // reset — both for the dashboard "triggered" field and ANY/ALL solve.
+                             // Use for momentary-pulse readers (e.g. RFID modules that pulse on a
+                             // read instead of holding the line). Omit (defaults to false) for
+                             // level-holding sensors like reed switches.
 };
 
 // Sensor runtime state
 struct SensorState {
   bool armed;      // Only relevant if needsArming == true
   bool present;    // Current computed presence (after debounce)
+  bool latched;    // Set once a latching sensor reads present; cleared on reset
   bool eventSent;  // One-shot event sent this session (reset clears this)
   bool forceLocked;        // Set by GM force-trigger, preserved until reset
   bool lastRaw;            // Last raw GPIO reading (for debounce)

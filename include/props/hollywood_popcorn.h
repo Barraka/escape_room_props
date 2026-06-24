@@ -15,14 +15,16 @@ static const char* DEVICE_NAME = "Popcorn Cups";
 static const IPAddress STATIC_IP(192, 168, 2, 197);
 
 // Sensors — 5 standalone RFID readers (3-wire: VCC, GND, Signal)
-// Each outputs HIGH when its cup's RFID chip is present
+// These modules emit a momentary HIGH pulse when a chip is read (they do NOT hold
+// the line), so each reader is marked `latching`: once read it stays "present"
+// until reset — both for the dashboard and the ALL-solve. (See Walk of Fame.)
 static const SensorDef SENSORS[] = {
-  //  id         pin  presentWhen              actionEvent       needsArming
-  { "cup1",      13,  PresentWhen::HIGH_LEVEL, "rfid_present",   true },
-  { "cup2",      14,  PresentWhen::HIGH_LEVEL, "rfid_present",   true },
-  { "cup3",      26,  PresentWhen::HIGH_LEVEL, "rfid_present",   true },
-  { "cup4",      27,  PresentWhen::HIGH_LEVEL, "rfid_present",   true },
-  { "cup5",      32,  PresentWhen::HIGH_LEVEL, "rfid_present",   true },
+  //  id         pin  presentWhen              actionEvent       needsArming  decorative  latching
+  { "cup1",      13,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      true },
+  { "cup2",      14,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      true },
+  { "cup3",      26,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      true },
+  { "cup4",      27,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      true },
+  { "cup5",      32,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      true },
 };
 static constexpr uint8_t SENSOR_COUNT = sizeof(SENSORS) / sizeof(SENSORS[0]);
 static constexpr SolveMode SOLVE_MODE = SolveMode::ALL;  // all 5 cups required
