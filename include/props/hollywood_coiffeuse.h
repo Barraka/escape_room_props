@@ -15,13 +15,17 @@ static const char* DEVICE_NAME = "Coiffeuse";
 static const IPAddress STATIC_IP(192, 168, 2, 198);
 
 // Sensors — 4 standalone RFID readers (3-wire: VCC, GND, Signal)
-// Each outputs HIGH when its RFID chip is present
+// Each outputs HIGH the whole time its RFID chip is present (these readers HOLD
+// the signal line — confirmed on the identical Poker readers 2026-06-26), so
+// `latching` is OFF: each reader reports LIVE presence so the dashboard shows which
+// chips are physically placed right now (clears on removal). ALL-solve requires all
+// 4 present SIMULTANEOUSLY.
 static const SensorDef SENSORS[] = {
-  //  id         pin  presentWhen              actionEvent       needsArming
-  { "rfid1",     13,  PresentWhen::HIGH_LEVEL, "rfid_present",   true },
-  { "rfid2",     14,  PresentWhen::HIGH_LEVEL, "rfid_present",   true },
-  { "rfid3",     26,  PresentWhen::HIGH_LEVEL, "rfid_present",   true },
-  { "rfid4",     27,  PresentWhen::HIGH_LEVEL, "rfid_present",   true },
+  //  id         pin  presentWhen              actionEvent       needsArming  decorative  latching
+  { "rfid1",     13,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      false },
+  { "rfid2",     14,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      false },
+  { "rfid3",     26,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      false },
+  { "rfid4",     27,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      false },
 };
 static constexpr uint8_t SENSOR_COUNT = sizeof(SENSORS) / sizeof(SENSORS[0]);
 static constexpr SolveMode SOLVE_MODE = SolveMode::ALL;  // all 4 required
