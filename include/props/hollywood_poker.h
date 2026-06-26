@@ -15,16 +15,19 @@ static const char* DEVICE_NAME = "Poker Table";
 static const IPAddress STATIC_IP(192, 168, 2, 200);
 
 // Sensors — 5 standalone RFID readers (3-wire: VCC, GND, Signal)
-// These modules emit a momentary HIGH pulse when a chip is read (they do NOT hold
-// the line), so each reader is marked `latching`: once read it stays "present"
-// until reset — both for the dashboard and the ALL-solve. (See Walk of Fame.)
+// These modules HOLD their signal line HIGH the whole time a tag sits on the reader
+// (verified 2026-06-26 by watching MQTT: a placed chip republished a release
+// transition ~5s later when lifted, not a momentary pulse). So `latching` is OFF —
+// each sensor reports LIVE presence, letting the dashboard show which chips are
+// physically placed right now (appear on place, clear on removal). ALL-solve then
+// requires all 5 chips present SIMULTANEOUSLY (the intended puzzle mechanic).
 static const SensorDef SENSORS[] = {
   //  id         pin  presentWhen              actionEvent       needsArming  decorative  latching
-  { "rfid1",     13,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      true },
-  { "rfid2",     14,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      true },
-  { "rfid3",     26,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      true },
-  { "rfid4",     27,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      true },
-  { "rfid5",     32,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      true },
+  { "rfid1",     13,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      false },
+  { "rfid2",     14,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      false },
+  { "rfid3",     26,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      false },
+  { "rfid4",     27,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      false },
+  { "rfid5",     32,  PresentWhen::HIGH_LEVEL, "rfid_present",   true,        false,      false },
 };
 static constexpr uint8_t SENSOR_COUNT = sizeof(SENSORS) / sizeof(SENSORS[0]);
 static constexpr SolveMode SOLVE_MODE = SolveMode::ALL;  // all 5 required
