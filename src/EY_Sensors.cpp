@@ -143,8 +143,15 @@ bool EY_Sensors_Tick() {
       Serial.println(" -> PRESENT");
 
       if (def.decorative) {
-        // Decorative: publish on every press, never affects solve logic
+        // Decorative: publish on every press (e.g. sound feedback).
         EY_PublishEvent(def.actionEvent, EY_MQTT::SRC_PLAYER);
+        // In SEQUENCE mode a decorative button is a "decoy" / wrong button →
+        // pressing it resets progress, just like an out-of-order real press,
+        // so the dashboard clears the green steps.
+        if (SOLVE_MODE == SolveMode::SEQUENCE && s_sequenceIndex > 0) {
+          Serial.println("[Sequence] Decoy pressed — sequence reset");
+          s_sequenceIndex = 0;
+        }
       } else if (SOLVE_MODE == SolveMode::SEQUENCE) {
         handleSequencePress(i);
       } else if (!state.eventSent) {
