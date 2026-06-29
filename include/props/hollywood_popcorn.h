@@ -20,18 +20,19 @@ static const IPAddress STATIC_IP(192, 168, 2, 197);
 // present), so `latching` is OFF: each reader reports LIVE presence so the dashboard
 // shows which cups are physically placed right now (clears on removal). ALL-solve
 // then requires all 5 present SIMULTANEOUSLY.
-// Readers are powered at 12V; their 12V signal is level-shifted to the ESP via
-// PER-LINE OPTOCOUPLERS, which INVERT — chip present pulls the GPIO LOW, hence
-// PresentWhen::LOW_LEVEL (opto also isolates, so no common ground is required).
-// NOTE: live presence can only be verified once the optocoupler wiring is finished
-// (hardware still in progress — see project memory).
+// Wiring is DIRECT 5V (same as Poker / Coiffeuse / Walk of Fame, all working):
+// readers powered at 5V, signal straight to the GPIO — chip present drives the line
+// HIGH, hence PresentWhen::HIGH_LEVEL. The 12V/optocoupler "plan B" was ABANDONED
+// 2026-06-26: the earlier 5V flakiness was a bad shared VCC/GND joint (re-wired on
+// the prop side), not a voltage problem; the optos would have INVERTED the logic
+// (the brief LOW_LEVEL setting made the dashboard read every cup backwards).
 static const SensorDef SENSORS[] = {
-  //  id         pin  presentWhen              actionEvent       needsArming  decorative  latching
-  { "cup1",      13,  PresentWhen::LOW_LEVEL,  "rfid_present",   true,        false,      false },
-  { "cup2",      14,  PresentWhen::LOW_LEVEL,  "rfid_present",   true,        false,      false },
-  { "cup3",      26,  PresentWhen::LOW_LEVEL,  "rfid_present",   true,        false,      false },
-  { "cup4",      27,  PresentWhen::LOW_LEVEL,  "rfid_present",   true,        false,      false },
-  { "cup5",      32,  PresentWhen::LOW_LEVEL,  "rfid_present",   true,        false,      false },
+  //  id         pin  presentWhen               actionEvent       needsArming  decorative  latching
+  { "cup1",      13,  PresentWhen::HIGH_LEVEL,  "rfid_present",   true,        false,      false },
+  { "cup2",      14,  PresentWhen::HIGH_LEVEL,  "rfid_present",   true,        false,      false },
+  { "cup3",      26,  PresentWhen::HIGH_LEVEL,  "rfid_present",   true,        false,      false },
+  { "cup4",      27,  PresentWhen::HIGH_LEVEL,  "rfid_present",   true,        false,      false },
+  { "cup5",      32,  PresentWhen::HIGH_LEVEL,  "rfid_present",   true,        false,      false },
 };
 static constexpr uint8_t SENSOR_COUNT = sizeof(SENSORS) / sizeof(SENSORS[0]);
 static constexpr SolveMode SOLVE_MODE = SolveMode::ALL;  // all 5 cups required
