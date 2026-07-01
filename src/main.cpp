@@ -181,13 +181,10 @@ static void setLed(bool on) {
 }
 
 static void handleReset() {
-#ifdef HAS_SIMON
-  // Simon auto-manages its state — ignore external resets to avoid reset storms
-  // The game restarts on boot and after solve. GM can force-solve if needed.
-  Serial.println("[Main] Reset ignored (Simon auto-manages)");
-  return;
-#endif
-
+  // NOTE: Simon previously ignored external resets ("auto-manages") to avoid
+  // reset storms, but that also broke the GM's manual "Réinitialiser". A GM
+  // click is a legitimate one-shot, so resets now flow through and restart the
+  // Simon game via EY_Simon_Reset() below.
   solvedLatched = false;
   lastChangeSource = EY_MQTT::SRC_DEVICE;
   overrideActive = false;
@@ -460,6 +457,11 @@ void loop() {
   }
 
   // ---- RESET button (BOOT) long-press ----
+  // Skipped on Simon: that devkit doesn't break out GPIO0/BOOT, so RESET_BTN_PIN
+  // floats LOW and would fire handleReset() continuously (a "reset storm" that
+  // would un-do force-solve and constantly restart the game). Simon is reset via
+  // the GM's MQTT command instead.
+#ifndef HAS_SIMON
   bool resetPressed = (digitalRead(RESET_BTN_PIN) == LOW);
 
   if (resetPressed && !resetBtnWasPressed) {
@@ -474,6 +476,7 @@ void loop() {
     handleReset();
     resetBtnWasPressed = false;
   }
+#endif
 
 #ifdef HAS_MANUAL_RESET
   // ---- Manual reset button (long-press) ----
