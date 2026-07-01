@@ -25,11 +25,13 @@ static const SensorDef SENSORS[] = {
 static constexpr uint8_t SENSOR_COUNT = 0;
 static constexpr SolveMode SOLVE_MODE = SolveMode::ANY;
 
-// No outputs (no maglocks, no relays)
+// Maglock that reveals the gadgets (XY-MOS driver, active-high) on GPIO25.
+// Fail-safe INACTIVE at boot; ARMED (locked) on session arm; opened by RC cmd
+// after the Simon puzzle + video sequence (decoupled from this prop's solve).
 static const OutputDef OUTPUTS[] = {
-  { "", 0, false },  // Placeholder (OUTPUT_COUNT=0 prevents access)
+  { "maglock", 25, false },  // GPIO25, active-high (HIGH = energized = locked)
 };
-static constexpr uint8_t OUTPUT_COUNT = 0;
+static constexpr uint8_t OUTPUT_COUNT = 1;
 
 // LED
 static const bool LED_ACTIVE_LOW = false;

@@ -92,6 +92,7 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
   bool isReset = false;
   bool isForceSolved = false;
   bool isArm = false;
+  bool isOpen = false;
   const char* triggerSensorId = nullptr;
   const char* cmdSource = EY_MQTT::SRC_GM;
 #ifdef HAS_BOBINE
@@ -124,6 +125,10 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
           isArm = true;
         } else if (strcmp(command, "set_output") == 0) {
           triggerSensorId = doc["sensorId"];
+        } else if (strcmp(command, "open") == 0) {
+          // Release this prop's output(s) — e.g. the gadgets trapdoor maglock —
+          // WITHOUT marking the prop solved (decoupled from the puzzle).
+          isOpen = true;
         }
 #ifdef HAS_BOBINE
         else if (strcmp(command, "start_sequence") == 0) {
@@ -160,6 +165,11 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
   if (isArm && s_onArm) {
     Serial.println("CMD: arm");
     s_onArm();
+  }
+
+  if (isOpen) {
+    Serial.println("CMD: open (release maglock, no solve)");
+    EY_Outputs_Release();
   }
 
   if (triggerSensorId) {
